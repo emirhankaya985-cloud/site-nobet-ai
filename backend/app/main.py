@@ -155,8 +155,10 @@ def list_monitors(org_id: str, user: User = Depends(current_user), db: Session =
 def create_monitor(org_id: str, data: CreateMonitor, user: User = Depends(current_user), db: Session = Depends(db_session)):
     membership_of(db, user, org_id, write=True)
     org = db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(404, "Organization not found")
     limit, allowed = {"starter": (3, [300]), "pro": (20, [60, 180, 300]), "agency": (100, [60, 180, 300])}.get(org.plan, (3, [300]))
-    if db.scalar(select(func.count(Monitor.id)).where(Monitor.organization_id == org_id)) >= limit:
+    if (db.scalar(select(func.count(Monitor.id)).where(Monitor.organization_id == org_id)) or 0) >= limit:
         raise HTTPException(403, "Plan monitor limit reached")
     if data.interval_seconds not in allowed:
         raise HTTPException(400, "Check interval not allowed by your plan")
@@ -227,7 +229,7 @@ def list_channels(org_id: str, user: User = Depends(current_user), db: Session =
 def create_ntfy(org_id: str, user: User = Depends(current_user), db: Session = Depends(db_session)):
     membership_of(db, user, org_id, write=True)
     count = db.scalar(select(func.count(NotificationChannel.id)).where(NotificationChannel.organization_id == org_id))
-    if count >= 5:
+    if (count or 0) >= 5:
         raise HTTPException(403, "Channel limit reached")
     topic = "sitenobet-" + secrets.token_urlsafe(32)
     c = NotificationChannel(organization_id=org_id, kind="ntfy", destination=topic, confirmed=True)
