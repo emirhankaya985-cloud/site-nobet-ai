@@ -24,7 +24,8 @@ def _check_tls(host: str, ip: str) -> tuple[datetime, None]:
     with socket.create_connection((ip, 443), timeout=8.0) as sock:
         with ssl.create_default_context().wrap_socket(sock, server_hostname=host) as tls:
             cert = tls.getpeercert()
-            if not cert or not isinstance(cert.get("notAfter"), str):
+            not_after = cert.get("notAfter") if cert else None
+            if not isinstance(not_after, str):
                 raise ssl.SSLError("Certificate expiry missing")
-            expiry = datetime.fromtimestamp(ssl.cert_time_to_seconds(cert["notAfter"]), tz=timezone.utc)
+            expiry = datetime.fromtimestamp(ssl.cert_time_to_seconds(not_after), tz=timezone.utc)
             return expiry, None
