@@ -22,3 +22,8 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# Enforce Ruff's conventional correctness-focused baseline; opt into extra
+# style rules after the FastAPI-specific `Depends` idiom is configured.
+select = ["E4", "E7", "E9", "F"]
