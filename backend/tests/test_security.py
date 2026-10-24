@@ -91,3 +91,17 @@ async def test_probe_categorizes_dns_failure(monkeypatch):
 
 def test_public_ipv6_literal_supported():
     assert safe_url("https://[2606:4700:4700::1111]/") == "https://[2606:4700:4700::1111]/"
+
+
+@pytest.mark.asyncio
+async def test_dns_resolution_is_bounded_by_total_probe_timeout(monkeypatch):
+    import app.security as sec
+
+    async def slow_dns(_host, _port):
+        await asyncio.sleep(1)
+        return [("8.8.8.8", 2)]
+
+    monkeypatch.setattr(sec, "resolve_public", slow_dns)
+    result = await sec.probe_http("https://example.com/", timeout=0.01)
+    assert result.is_up is False
+    assert result.error_kind == "TIMEOUT"

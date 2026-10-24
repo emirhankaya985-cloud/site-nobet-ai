@@ -1,7 +1,7 @@
 """Run separately from FastAPI. Never use GitHub Actions as uptime scheduler."""
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import timedelta, timezone
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 from .database import session_factory
@@ -32,17 +32,26 @@ async def check_one() -> bool:
         monitor = claim_monitor(db)
         if monitor is None:
             return False
+        # The timestamp is a claim token: if another worker reclaims the lease,
+        # discard this stale result instead of overwriting the new owner.
+        claimed_lease = monitor.leased_until
+        if claimed_lease and claimed_lease.tzinfo is None:
+            claimed_lease = claimed_lease.replace(tzinfo=timezone.utc)
         probe = await probe_http(monitor.url)
         try:
             # No competing update to monitor state after lease: lock the row.
-            locked = db.scalar(select(Monitor).where(Monitor.id == monitor.id).with_for_update())
-            if locked and not locked.paused:
-                outcome = apply_probe(db, locked, probe)
-                locked.leased_until = None
-                db.commit()
-                log.info("probe complete monitor=%s state=%s event=%s", monitor.id, outcome.current, outcome.event)
-            else:
+            locked = db.scalar(select(Monitor).where(Monitor.id == monitor.id).with_for_update().execution_options(populate_existing=True))
+            current_lease = locked.leased_until if locked else None
+            if current_lease and current_lease.tzinfo is None:
+                current_lease = current_lease.replace(tzinfo=timezone.utc)
+            if not locked or locked.paused or current_lease != claimed_lease:
                 db.rollback()
+                log.warning("probe discarded after lease change monitor=%s", monitor.id)
+                return True
+            outcome = apply_probe(db, locked, probe)
+            locked.leased_until = None
+            db.commit()
+            log.info("probe complete monitor=%s state=%s event=%s", monitor.id, outcome.current, outcome.event)
         except Exception:
             db.rollback()
             log.exception("monitor probe persistence failure monitor=%s", monitor.id)

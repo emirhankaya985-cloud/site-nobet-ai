@@ -105,25 +105,28 @@ async def probe_http(url: str, *, timeout: int = 10, redirects: int = 5) -> Prob
     import time
     start = time.monotonic()
     try:
-        current = safe_url(url)
-        for hop in range(redirects + 1):
-            parsed = urlsplit(current)
-            host = parsed.hostname
-            if host is None:
-                raise UnsafeTarget("Missing hostname")
-            port = 443 if parsed.scheme == "https" else 80
-            ips = await resolve_public(host, port)
-            connector = aiohttp.TCPConnector(resolver=PinnedResolver(host, ips), use_dns_cache=False, limit=1, ssl=True)
-            async with aiohttp.ClientSession(connector=connector, trust_env=False, timeout=aiohttp.ClientTimeout(total=timeout), cookie_jar=aiohttp.DummyCookieJar()) as client:
-                async with client.get(current, allow_redirects=False, headers={"User-Agent": "SiteNobetAI/0.1", "Accept-Encoding": "identity"}, max_redirects=0) as resp:
-                    code = resp.status
-                    if 300 <= code <= 399 and resp.headers.get("Location"):
-                        if hop == redirects:
-                            return Probe(False, code, (time.monotonic()-start)*1000, "TOO_MANY_REDIRECTS")
-                        current = safe_url(urljoin(current, resp.headers["Location"]))
-                        continue
-                    # Don't download remote bodies; closing stream bounds bandwidth and time.
-                    return Probe(200 <= code < 400, code, (time.monotonic()-start)*1000, None if code < 400 else "HTTP_ERROR")
-        return Probe(False, None, (time.monotonic()-start)*1000, "TOO_MANY_REDIRECTS")
+        # One deadline covers DNS, every redirect and TLS; a single probe
+        # must not outlive the worker lease because each redirect gets its own client.
+        async with asyncio.timeout(timeout):
+            current = safe_url(url)
+            for hop in range(redirects + 1):
+                parsed = urlsplit(current)
+                host = parsed.hostname
+                if host is None:
+                    raise UnsafeTarget("Missing hostname")
+                port = 443 if parsed.scheme == "https" else 80
+                ips = await resolve_public(host, port)
+                connector = aiohttp.TCPConnector(resolver=PinnedResolver(host, ips), use_dns_cache=False, limit=1, ssl=True)
+                async with aiohttp.ClientSession(connector=connector, trust_env=False, timeout=aiohttp.ClientTimeout(total=timeout), cookie_jar=aiohttp.DummyCookieJar()) as client:
+                    async with client.get(current, allow_redirects=False, headers={"User-Agent": "SiteNobetAI/0.1", "Accept-Encoding": "identity"}, max_redirects=0) as resp:
+                        code = resp.status
+                        if 300 <= code <= 399 and resp.headers.get("Location"):
+                            if hop == redirects:
+                                return Probe(False, code, (time.monotonic()-start)*1000, "TOO_MANY_REDIRECTS")
+                            current = safe_url(urljoin(current, resp.headers["Location"]))
+                            continue
+                        # Don't download remote bodies; closing stream bounds bandwidth and time.
+                        return Probe(200 <= code < 400, code, (time.monotonic()-start)*1000, None if code < 400 else "HTTP_ERROR")
+            return Probe(False, None, (time.monotonic()-start)*1000, "TOO_MANY_REDIRECTS")
     except (UnsafeTarget, OSError, aiohttp.ClientError, TimeoutError, asyncio.TimeoutError) as exc:
         return Probe(False, None, (time.monotonic()-start)*1000, classify_error(exc))
