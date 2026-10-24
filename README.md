@@ -2,7 +2,7 @@
 
 A multi-tenant web monitoring SaaS MVP prototype: independent Python background worker, FastAPI API, PostgreSQL with Alembic, Telegram / ntfy event outbox, and a responsive Next.js dashboard.
 
-> **Development status (2026-10-24):** Functional backend scaffolding and local tests (the local environment has aiohttp 3.13.3; the project pins patched 3.14.5, which requires CI confirmation), NOT production-ready, NOT deployed. Security review, full frontend build, independent worker heartbeat monitoring, email verification, password reset, public incident drill, and 7-day pilot are outstanding. Never show a green production badge based on the code alone.
+> **Development status (2026-10-24):** Source uploaded to the public 985 GitHub repository and GitHub CI is green (backend 43 tests, PostgreSQL migration, dependency audit, frontend build, and both Docker builds). The service is NOT production-ready or deployed. Independent worker heartbeat, email verification, password reset, real Telegram/ntfy incident drill, and the seven-day pilot remain outstanding.
 
 ## Architecture
 
@@ -85,8 +85,8 @@ A GitHub Actions workflow is included. Do not report CI as passed until real Act
 
 ## Outstanding production acceptance criteria
 
-- The public repository `emirhankaya985-cloud/site-nobet-ai` was created on 2026-10-24. Source upload and GitHub Actions verification must be confirmed separately. Never push `.env`.
-- Frontend dependency installation/build, TypeScript, lint, Docker builds, GitHub CI, and PostgreSQL migration on the actual host are **unverified** (development environment cannot access npm registry).
+- The public repository `emirhankaya985-cloud/site-nobet-ai` contains 56 source files. GitHub Actions run 40069640261 passed all 3 jobs (backend, frontend, Docker). Never push `.env`.
+- GitHub CI has validated frontend installation, build, TypeScript, lint, Docker builds, backend tests, pip-audit, and PostgreSQL migration. Production-host PostgreSQL and startup tests are **unverified**.
 - Email verification, password reset, complete organization member management, billing, production-grade rate limiting, scheduled emailed reports, per-channel channel management, alert analytics, 24-hour / 7-day / 30-day response graphs, and broader recovery / TLS tests remain.
 - Real delivery to Telegram / ntfy and real HTTP outage / recovery, independent heartbeat watch, backup restore, multi-worker Postgres stress test and 7-day pilot remain **unverified**.
 
