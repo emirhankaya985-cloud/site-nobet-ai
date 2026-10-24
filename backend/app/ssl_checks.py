@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from .security import resolve_public, safe_url, UnsafeTarget
 
 
-async def check_ssl(url: str) -> tuple[datetime | None, str | None]:
+async def check_ssl(url: str, *, timeout: float = 12.0) -> tuple[datetime | None, str | None]:
     """Validate TLS against system trust and hostname while dialing a pinned public IP."""
     try:
         u = urlsplit(safe_url(url))
@@ -14,8 +14,11 @@ async def check_ssl(url: str) -> tuple[datetime | None, str | None]:
             return None, None
         if u.hostname is None:
             raise UnsafeTarget("Missing hostname")
-        ips = await resolve_public(u.hostname, 443)
-        return await asyncio.to_thread(_check_tls, u.hostname, ips[0][0])
+        # Bound the complete SSL probe, including potentially slow DNS lookup.
+        # The underlying socket also has its own timeout for the thread.
+        async with asyncio.timeout(timeout):
+            ips = await resolve_public(u.hostname, 443)
+            return await asyncio.to_thread(_check_tls, u.hostname, ips[0][0])
     except (OSError, ssl.SSLError, UnsafeTarget, TimeoutError) as exc:
         return None, type(exc).__name__
 
