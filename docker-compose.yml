@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: sitenobet
+      POSTGRES_USER: sitenobet
+      POSTGRES_PASSWORD: local-development-only
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sitenobet"]
+      interval: 5s
+      retries: 5
+  api:
+    build: ./backend
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql://sitenobet:local-development-only@db:5432/sitenobet
+      SESSION_SECRET: change-this-local-development-secret-32chars
+      CORS_ORIGINS: http://localhost:3000
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+  worker:
+    build: ./backend
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql://sitenobet:local-development-only@db:5432/sitenobet
+      SESSION_SECRET: change-this-local-development-secret-32chars
+    command: python -m app.worker
+    depends_on:
+      api: {condition: service_started}
+  web:
+    build:
+      context: ./frontend
+      args: {NEXT_PUBLIC_API_URL: http://localhost:8000}
+    ports: ["3000:3000"]
+    depends_on: [api]
+volumes:
+  dbdata:
