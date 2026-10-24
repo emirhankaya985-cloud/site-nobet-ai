@@ -1,0 +1,63 @@
+name: SiteNobet CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: test
+          POSTGRES_DB: sitenobet_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test" --health-interval 5s --health-timeout 5s --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -e '.[test]' ruff mypy pip-audit
+      - run: ruff check app tests
+      - run: mypy app --ignore-missing-imports --follow-imports=silent
+      - run: pytest -q
+      - name: Test PostgreSQL migration
+        run: alembic upgrade head && alembic downgrade base && alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
+      - run: pip-audit
+      - name: Check for suspicious tokens
+        run: |
+          if grep -R -E '(gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9]{30,}|[0-9]+:[A-Za-z0-9_-]{35,})' . --exclude-dir=.git --exclude='ci.yml'; then
+            echo 'Potential secret present' >&2; exit 1
+          fi
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t sitenobet-api ./backend
+      - run: docker build -t sitenobet-web ./frontend
