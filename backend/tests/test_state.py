@@ -18,12 +18,15 @@ def test_state_machine_sequence():
 def test_incident_idempotent_and_recovery(database):
     with database() as db:
         org = Organization(name="Test")
-        db.add(org); db.flush()
+        db.add(org)
+        db.flush()
         monitor = Monitor(organization_id=org.id,name="Example",url="https://example.com/")
         channel = NotificationChannel(organization_id=org.id,kind="ntfy",destination="private-random-token",confirmed=True)
-        db.add_all([monitor,channel]);db.commit()
+        db.add_all([monitor,channel])
+        db.commit()
         for x in [False,False,False,True,True]:
-            apply_probe(db,monitor,Probe(x,200 if x else 503,20,"HTTP_ERROR" if not x else None));db.commit()
+            apply_probe(db,monitor,Probe(x,200 if x else 503,20,"HTTP_ERROR" if not x else None))
+            db.commit()
         incidents = db.scalars(select(Incident).where(Incident.monitor_id==monitor.id)).all()
         deliveries = db.scalars(select(NotificationDelivery)).all()
         assert monitor.status == "UP"
@@ -35,9 +38,12 @@ def test_incident_idempotent_and_recovery(database):
 
 def test_uptime_reports_unknown_not_100_percent(database):
     with database() as db:
-        org = Organization(name="Org");db.add(org);db.flush()
+        org = Organization(name="Org")
+        db.add(org)
+        db.flush()
         m=Monitor(organization_id=org.id,name="Site",url="https://example.com/",interval_seconds=300)
-        db.add(m);db.commit()
+        db.add(m)
+        db.commit()
         report = uptime_summary(db,m)
         assert report["uptime_percent"] is None
         assert report["unobserved_seconds"] == 86400
@@ -46,25 +52,35 @@ def test_uptime_reports_unknown_not_100_percent(database):
 def test_ssl_threshold_dedup_and_renewal(database):
     from app.ssl_alerts import process_ssl_result
     with database() as db:
-        org = Organization(name="Org"); db.add(org); db.flush()
+        org = Organization(name="Org")
+        db.add(org)
+        db.flush()
         m = Monitor(organization_id=org.id, name="HTTPS", url="https://example.com/")
         c = NotificationChannel(organization_id=org.id, kind="ntfy", destination="secret", confirmed=True)
-        db.add_all([m,c]); db.commit()
+        db.add_all([m,c])
+        db.commit()
         exp = utcnow() + timedelta(days=6)
-        process_ssl_result(db,m,exp,None); db.commit()
-        process_ssl_result(db,m,exp,None); db.commit()
+        process_ssl_result(db,m,exp,None)
+        db.commit()
+        process_ssl_result(db,m,exp,None)
+        db.commit()
         assert len(db.scalars(select(NotificationDelivery)).all()) == 1
-        process_ssl_result(db,m,exp + timedelta(days=20),None); db.commit()
+        process_ssl_result(db,m,exp + timedelta(days=20),None)
+        db.commit()
         assert len(db.scalars(select(NotificationDelivery)).all()) == 2
 
 
 def test_uptime_sqlite_datetime_round_trip(database):
     """SQLite strips UTC tzinfo; production reports must not crash after DB read."""
     with database() as db:
-        org = Organization(name="Org");db.add(org);db.flush()
+        org = Organization(name="Org")
+        db.add(org)
+        db.flush()
         m=Monitor(organization_id=org.id,name="Site",url="https://example.com/",interval_seconds=60)
-        db.add(m);db.commit()
-        apply_probe(db,m,Probe(True,200,5));db.commit()
+        db.add(m)
+        db.commit()
+        apply_probe(db,m,Probe(True,200,5))
+        db.commit()
     with database() as db:
         m=db.get(Monitor,m.id)
         report=uptime_summary(db,m)

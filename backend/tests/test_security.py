@@ -67,7 +67,8 @@ async def test_redirect_to_cloud_metadata_blocked(monkeypatch):
         async def __aexit__(self, *args): pass
         def get(self, *args, **kwargs):
             self.calls+=1
-            if self.calls > 1: raise AssertionError("The redirect target was requested!")
+            if self.calls > 1:
+                raise AssertionError("The redirect target was requested!")
             return FakeResponse()
     async def resolve(*args):return [("8.8.8.8", socket.AF_INET)]
     import socket

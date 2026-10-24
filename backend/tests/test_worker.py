@@ -5,9 +5,12 @@ from app.worker import claim_monitor
 
 def test_monitor_claim_lease(database):
     with database() as db:
-        org = Organization(name="Org");db.add(org);db.flush()
+        org = Organization(name="Org")
+        db.add(org)
+        db.flush()
         m=Monitor(organization_id=org.id,name="One",url="https://example.com/",interval_seconds=60)
-        db.add(m);db.commit()
+        db.add(m)
+        db.commit()
         first=claim_monitor(db)
         assert first.id == m.id
         assert claim_monitor(db) is None
@@ -23,9 +26,12 @@ async def test_worker_processes_monitor_check(database,monkeypatch):
     monkeypatch.setattr(worker,"session_factory",lambda:database)
     monkeypatch.setattr(worker,"probe_http",fake_probe)
     with database() as db:
-        o=Organization(name="Test");db.add(o);db.flush()
+        o=Organization(name="Test")
+        db.add(o)
+        db.flush()
         m=Monitor(organization_id=o.id,name="Test",url="http://example.com/",interval_seconds=60)
-        db.add(m);db.commit()
+        db.add(m)
+        db.commit()
         mid=m.id
     assert await worker.check_one()
     with database() as db:

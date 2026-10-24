@@ -27,7 +27,8 @@ def test_cross_tenant_isolation(client,two_users):
 
 
 def test_plan_restrictions(client,two_users):
-    person = two_users[0];org=person["organization_id"]
+    person = two_users[0]
+    org=person["organization_id"]
     base = f"/organizations/{org}/monitors"
     assert client.post(base,headers=h(person),json={"name":"too fast","url":"https://example.com","interval_seconds":60}).status_code == 400
     for i in range(3):
@@ -38,7 +39,8 @@ def test_plan_restrictions(client,two_users):
 
 
 def test_channel_and_telegram_security(client,two_users):
-    user=two_users[0]; org=user["organization_id"]
+    user=two_users[0]
+    org=user["organization_id"]
     p=f"/organizations/{org}/notifications"
     result=client.post(p+"/ntfy",headers=h(user))
     assert result.status_code==201
@@ -57,7 +59,8 @@ def test_worker_health_without_heartbeat(client):
 
 
 def test_daily_weekly_reports(client,two_users):
-    user=two_users[0]; org=user["organization_id"]
+    user=two_users[0]
+    org=user["organization_id"]
     daily=client.get(f"/organizations/{org}/reports?period_days=1",headers=h(user))
     weekly=client.get(f"/organizations/{org}/reports?period_days=7",headers=h(user))
     assert daily.status_code==200 and weekly.status_code==200
@@ -73,7 +76,8 @@ def test_pause_marks_unknown_time_and_does_not_falsely_recover(client,two_users,
     from app.monitoring import apply_probe
     from app.security import Probe
     from sqlalchemy import select
-    person=two_users[0];org=person["organization_id"]
+    person=two_users[0]
+    org=person["organization_id"]
     r=client.post(f"/organizations/{org}/monitors",headers=h(person),json={"name":"Website","url":"https://example.com"})
     mid=r.json()["id"]
     with database() as db:
