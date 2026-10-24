@@ -1,0 +1,10 @@
+"use client";
+import Link from "next/link";
+import { Activity, ArrowRight } from "lucide-react";
+import { FormEvent, useState } from "react";
+import { api, Session, STORAGE_KEY } from "../../lib/api";
+export default function RegisterPage(){
+ const [email,setEmail]=useState("");const [password,setPassword]=useState("");const [organization_name,setName]=useState("");const [loading,setLoading]=useState(false);const [error,setError]=useState("");
+ async function submit(e:FormEvent){e.preventDefault();setLoading(true);setError("");try{const result=await api<Session>("/auth/register",{method:"POST",body:JSON.stringify({email,password,organization_name})});sessionStorage.setItem(STORAGE_KEY,JSON.stringify(result));window.location.href="/dashboard";}catch(err){setError(err instanceof Error?err.message:"Bir hata oluştu");}finally{setLoading(false);}}
+ return <div className="auth-page"><div className="auth-card"><Link href="/" className="brand"><span className="brand-mark"><Activity size={21}/></span>Site<span className="bright">Nöbet</span></Link><h1>İçiniz rahat olsun.</h1><p className="muted">3 web sitesini ücretsiz takip etmeye başlayın.</p><form onSubmit={submit}><label>İşletme adı<input required maxLength={150} value={organization_name} onChange={e=>setName(e.target.value)} placeholder="Şirketiniz veya projeniz"/></label><label>E-posta<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="ornek@sirket.com" autoComplete="email"/></label><label>Şifre <span className="muted small">(en az 12 karakter)</span><input type="password" minLength={12} required value={password} onChange={e=>setPassword(e.target.value)} autoComplete="new-password"/></label>{error&&<p role="alert" className="error-text">{error}</p>}<button disabled={loading} className="button primary full">{loading?"Hesap açılıyor...":"Ücretsiz hesap oluştur"}<ArrowRight size={16}/></button></form><p className="auth-link">Zaten üye misiniz? <Link href="/login">Giriş yapın</Link></p></div></div>;
+}

@@ -1,0 +1,17 @@
+"use client";
+import Link from "next/link";
+import { ArrowLeft, BellRing, Copy, Plus } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import AppShell from "../../components/AppShell";
+import {useSession} from "../../components/useSession";
+import {api} from "../../lib/api";
+type Channel={id:string;kind:string;confirmed:boolean;topic:string|null};
+export default function Settings(){
+ const {session,ready,logout}=useSession();const [items,setItems]=useState<Channel[]>([]);const [telegramCode,setTelegramCode]=useState("");const [error,setError]=useState("");const [busy,setBusy]=useState(false);
+ const reload=useCallback(async()=>{if(session)try{setItems(await api<Channel[]>(`/organizations/${session.organization_id}/notifications`,{},session.access_token))}catch(e){setError(e instanceof Error?e.message:"Sunucu hatası")}},[session]);
+ useEffect(()=>{if(ready&&!session)window.location.href="/login"},[ready,session]);useEffect(()=>{void reload()},[reload]);
+ async function createNtfy(){if(!session)return;setBusy(true);try{await api(`/organizations/${session.organization_id}/notifications/ntfy`,{method:"POST"},session.access_token);await reload();setError("")}catch(e){setError(e instanceof Error?e.message:"Bildirim kanalı açılamadı")}finally{setBusy(false)}}
+ async function linkTelegram(){if(!session)return;setBusy(true);try{const res=await api<{code:string}>(`/organizations/${session.organization_id}/notifications/telegram/link-code`,{method:"POST"},session.access_token);setTelegramCode(res.code);setError("")}catch(e){setError(e instanceof Error?e.message:"Telegram ayarlanmamış")}finally{setBusy(false)}}
+ if(!ready||!session)return <div className="page-loading">Yükleniyor...</div>;
+ return <AppShell onLogout={logout}><Link href="/dashboard" className="back-link"><ArrowLeft size={16}/> Panele dön</Link><div className="page-heading"><div><div className="eyebrow">ENTEGRASYONLAR</div><h1>Bildirim kanalları</h1><p className="muted">Kesinti ve kurtarma mesajlarının nereye gideceğini ayarlayın.</p></div></div>{error&&<div className="alert" role="alert">{error}</div>}<div className="detail-grid"><div className="section-card"><div className="section-heading"><h2>ntfy bildirimleri</h2><BellRing size={19}/></div><p className="muted">Güvenli, rastgele üretilmiş konu bağlantısını ntfy uygulamasına ekleyin. Konu bağlantısını gizli tutun.</p><button className="button primary" disabled={busy} onClick={createNtfy}><Plus size={16}/> ntfy konusu oluştur</button>{items.filter(x=>x.kind==="ntfy").map(x=><div className="topic-box" key={x.id}><span className="small">Konu adı (gizli)</span><code>{x.topic}</code><button aria-label="Konuyu kopyala" onClick={()=>navigator.clipboard.writeText(x.topic||"")}><Copy size={16}/></button></div>)}</div><div className="section-card"><div className="section-heading"><h2>Telegram</h2><BellRing size={19}/></div><p className="muted">Bot etkinse tek kullanımlık kod oluşturup botunuza <code>/start KOD</code> mesajı gönderin.</p><button className="button secondary" onClick={linkTelegram} disabled={busy}>Bağlantı kodu üret</button>{telegramCode&&<div className="topic-box"><code>{telegramCode}</code><button aria-label="Telegram kodunu kopyala" onClick={()=>navigator.clipboard.writeText(telegramCode)}><Copy size={16}/></button></div>}{items.some(x=>x.kind==="telegram")&&<p className="green-text small">Telegram bağlantınız etkin.</p>}</div></div></AppShell>
+}
