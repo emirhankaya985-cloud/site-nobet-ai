@@ -1,0 +1,68 @@
+# WARNING: All paid resources require user approval before Blueprint creation.
+services:
+  - type: web
+    name: sitenobet-api
+    runtime: python
+    region: frankfurt
+    plan: 0.5c-512mb
+    rootDir: backend
+    buildCommand: pip install .
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SESSION_SECRET
+        fromService:
+          type: worker
+          name: sitenobet-worker
+          envVarKey: SESSION_SECRET
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sitenobet-db
+          property: connectionString
+      - key: CORS_ORIGINS
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+  - type: worker
+    name: sitenobet-worker
+    runtime: python
+    region: frankfurt
+    plan: 0.5c-512mb
+    rootDir: backend
+    buildCommand: pip install .
+    startCommand: python -m app.worker
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sitenobet-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+  - type: web
+    name: sitenobet-web
+    runtime: node
+    region: frankfurt
+    plan: 0.5c-512mb
+    rootDir: frontend
+    buildCommand: npm install --no-audit --no-fund && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+databases:
+  - name: sitenobet-db
+    region: frankfurt
+    plan: 0.1c-256mb
+    databaseName: sitenobet
+    user: sitenobet_user
+    ipAllowList: []
