@@ -58,7 +58,7 @@ async def resolve_public(hostname: str, port: int) -> list[tuple[str, int]]:
         infos = await asyncio.get_running_loop().getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except OSError as exc:
         raise OSError("DNS resolution failed") from exc
-    targets = sorted(set((info[4][0], info[0]) for info in infos))
+    targets: list[tuple[str, int]] = sorted(set((str(info[4][0]), int(info[0])) for info in infos))
     if not targets:
         raise OSError("No DNS answers")
     for ip, _ in targets:
@@ -109,6 +109,8 @@ async def probe_http(url: str, *, timeout: int = 10, redirects: int = 5) -> Prob
         for hop in range(redirects + 1):
             parsed = urlsplit(current)
             host = parsed.hostname
+            if host is None:
+                raise UnsafeTarget("Missing hostname")
             port = 443 if parsed.scheme == "https" else 80
             ips = await resolve_public(host, port)
             connector = aiohttp.TCPConnector(resolver=PinnedResolver(host, ips), use_dns_cache=False, limit=1, ssl=True)

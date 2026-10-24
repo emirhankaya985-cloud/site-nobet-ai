@@ -15,7 +15,7 @@ def uptime_summary(db: Session, monitor: Monitor, hours: int = 24):
     # Include one result before the window to determine state at window start.
     before = db.scalar(select(CheckResult).where(CheckResult.monitor_id == monitor.id, CheckResult.created_at < start).order_by(CheckResult.created_at.desc()).limit(1))
     rows = db.scalars(select(CheckResult).where(CheckResult.monitor_id == monitor.id, CheckResult.created_at >= start, CheckResult.created_at <= end).order_by(CheckResult.created_at)).all()
-    checks = ([before] if before else []) + rows
+    checks = ([before] if before else []) + list(rows)
     measured = healthy = down = 0.0
     max_gap = monitor.interval_seconds * 2
     for i, check in enumerate(checks):
