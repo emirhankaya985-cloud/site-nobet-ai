@@ -68,6 +68,28 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Next.js production runtime HTTP and security-header smoke
+        run: |
+          set -euo pipefail
+          PORT=18764 npm run start > /tmp/sitenobet-next.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+          code="000"
+          for attempt in $(seq 1 60); do
+            code=$(curl --max-time 2 --silent --output /tmp/sitenobet-home.html --write-out '%{http_code}' http://127.0.0.1:18764/ || true)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 1
+          done
+          if [ "$code" != "200" ]; then
+            cat /tmp/sitenobet-next.log
+            echo "Next.js server failed readiness with HTTP $code" >&2
+            exit 1
+          fi
+          curl --max-time 5 --silent --show-error --dump-header /tmp/sitenobet-headers.txt --output /dev/null http://127.0.0.1:18764/
+          grep -iq '^x-content-type-options: nosniff' /tmp/sitenobet-headers.txt
+          grep -iq '^x-frame-options: DENY' /tmp/sitenobet-headers.txt
+          grep -iq '^content-security-policy:' /tmp/sitenobet-headers.txt
+          echo 'PASS: production Next.js HTTP 200 and security headers'
   docker:
     runs-on: ubuntu-latest
     steps:
