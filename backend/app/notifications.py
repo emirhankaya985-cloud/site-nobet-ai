@@ -22,6 +22,18 @@ async def send_delivery(channel: NotificationChannel, message: str) -> None:
         else:
             raise RuntimeError("Unsupported notification channel")
         response.raise_for_status()
+        if channel.kind == "telegram":
+            # HTTP 200 is not enough: validate Telegram's application-level receipt.
+            try:
+                receipt = response.json()
+            except ValueError as exc:
+                raise RuntimeError("Telegram response is not valid JSON") from exc
+            if not isinstance(receipt, dict) or receipt.get("ok") is not True:
+                raise RuntimeError("Telegram did not acknowledge the message")
+            result = receipt.get("result")
+            if (not isinstance(result, dict) or type(result.get("message_id")) is not int
+                    or result["message_id"] <= 0):
+                raise RuntimeError("Telegram did not provide a valid message ID")
 
 
 def claim_delivery(db: Session, now: datetime | None = None) -> NotificationDelivery | None:

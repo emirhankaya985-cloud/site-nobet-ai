@@ -34,6 +34,11 @@ jobs:
         run: alembic upgrade head && alembic downgrade base && alembic upgrade head
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
+      - name: PostgreSQL integration smoke (ephemeral CI only)
+        run: pytest -q tests/test_postgres_integration.py
+        env:
+          SITENOBET_TEST_POSTGRES: '1'
+          DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
       - run: pip-audit
       - name: Check for suspicious tokens
         run: |
