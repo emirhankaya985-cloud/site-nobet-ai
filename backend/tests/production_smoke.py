@@ -4,7 +4,6 @@ This script does not create monitors or send any outbound notifications.
 """
 import json
 import os
-import signal
 import subprocess
 import sys
 import time
