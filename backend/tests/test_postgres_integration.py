@@ -129,3 +129,65 @@ def test_postgres_api_does_not_leak_tenants():
         assert client.get(f"/organizations/{owner_org}/monitors/{monitor_id}", headers=headers_a).status_code == 200
         assert client.get(f"/organizations/{owner_org}/monitors/{monitor_id}", headers=headers_b).status_code == 404
         assert client.get(f"/organizations/{owner_org}/reports", headers=headers_b).status_code == 404
+
+
+def test_postgres_concurrent_claim_avoids_duplicate_delivery():
+    from app.notifications import claim_delivery
+
+    with session_factory()() as db:
+        org = Organization(name="Delivery claim CI")
+        db.add(org)
+        db.flush()
+        channel = NotificationChannel(
+            organization_id=org.id, kind="ntfy", destination="ci-topic", confirmed=True
+        )
+        db.add(channel)
+        db.flush()
+        deliveries = [
+            NotificationDelivery(channel_id=channel.id, event_key=f"ci:delivery:claim:{n}", message="outage")
+            for n in range(2)
+        ]
+        db.add_all(deliveries)
+        db.commit()
+        ids = {d.id for d in deliveries}
+
+    def claim_from_independent_session():
+        with session_factory()() as db:
+            row = claim_delivery(db)
+            return row.id if row else None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = list(pool.map(lambda _: claim_from_independent_session(), range(2)))
+    assert {first, second} == ids
+
+
+@pytest.mark.asyncio
+async def test_postgres_expired_delivery_lease_fencing(monkeypatch):
+    from app import notifications
+
+    with session_factory()() as db:
+        org = Organization(name="Fenced notification CI")
+        db.add(org)
+        db.flush()
+        channel = NotificationChannel(organization_id=org.id, kind="ntfy", destination="ci-topic", confirmed=True)
+        db.add(channel)
+        db.flush()
+        delivery = NotificationDelivery(channel_id=channel.id, event_key="ci:delivery:fencing", message="outage")
+        db.add(delivery)
+        db.commit()
+        delivery_id = delivery.id
+
+    async def delayed_send(_channel, _message):
+        with session_factory()() as successor:
+            row = successor.get(NotificationDelivery, delivery_id)
+            row.leased_until = utcnow() + timedelta(minutes=2)
+            successor.commit()
+
+    monkeypatch.setattr(notifications, "send_delivery", delayed_send)
+    with session_factory()() as sender:
+        assert await notifications.deliver_one(sender)
+    with session_factory()() as db:
+        row = db.get(NotificationDelivery, delivery_id)
+        assert row.status == "pending"
+        assert row.sent_at is None
+        assert row.leased_until is not None

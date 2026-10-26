@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import httpx
 from sqlalchemy import select, or_
@@ -45,25 +45,58 @@ def claim_delivery(db: Session, now: datetime | None = None) -> NotificationDeli
     return row
 
 
+def _utc_aware(value: datetime | None) -> datetime | None:
+    """Postgres stores timezone-aware timestamps; SQLite may discard tzinfo."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 async def deliver_one(db: Session, now: datetime | None = None) -> bool:
     now = now or utcnow()
     row = claim_delivery(db, now)
     if row is None:
         return False
+
+    delivery_id = row.id
+    claim_deadline = _utc_aware(row.leased_until)
+    message = row.message
     channel = db.get(NotificationChannel, row.channel_id)
+    failure = False
     try:
         if channel is None or not channel.confirmed:
             raise RuntimeError("Notification channel removed or inactive")
-        await send_delivery(channel, row.message)
-        row.status = "sent"
-        row.sent_at = utcnow()
+        await send_delivery(channel, message)
     except (httpx.HTTPError, RuntimeError, ValueError):
-        row.attempts += 1
-        if row.attempts >= 5:
-            row.status = "failed"
+        failure = True
+
+    try:
+        # Reload from the database, not the identity map. Another worker may
+        # have reclaimed the expired lease while the external send was in flight.
+        locked = db.scalar(
+            select(NotificationDelivery).where(NotificationDelivery.id == delivery_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if (locked is None or locked.status != "pending"
+                or _utc_aware(locked.leased_until) != claim_deadline):
+            db.rollback()  # Never overwrite a successor worker's claim or outcome.
+            return True
+
+        if failure:
+            locked.attempts += 1
+            if locked.attempts >= 5:
+                locked.status = "failed"
+            else:
+                locked.next_attempt_at = utcnow() + timedelta(
+                    seconds=min(3600, 30 * (2 ** (locked.attempts - 1)))
+                )
         else:
-            row.next_attempt_at = utcnow() + timedelta(seconds=min(3600, 30 * (2 ** (row.attempts - 1))))
-    finally:
-        row.leased_until = None
+            locked.status = "sent"
+            locked.sent_at = utcnow()
+        locked.leased_until = None
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return True

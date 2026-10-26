@@ -90,3 +90,77 @@ async def test_telegram_unacknowledged_response_is_retried(database, monkeypatch
         assert await deliver_one(db)
         assert delivery.status == "pending"
         assert delivery.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_late_sender_cannot_overwrite_new_delivery_lease(database, monkeypatch):
+    from datetime import timedelta
+    from app.models import utcnow
+    from app import notifications
+
+    with database() as db:
+        org = Organization(name="Delivery fencing")
+        db.add(org)
+        db.flush()
+        channel = NotificationChannel(organization_id=org.id, kind="ntfy", destination="ci-token", confirmed=True)
+        db.add(channel)
+        db.flush()
+        delivery = NotificationDelivery(channel_id=channel.id, event_key="delivery:lease", message="down")
+        db.add(delivery)
+        db.commit()
+        delivery_id = delivery.id
+
+    async def delayed_send(_channel, _message):
+        # A different worker has reclaimed the expired delivery while sender A waits.
+        with database() as successor:
+            row = successor.get(NotificationDelivery, delivery_id)
+            row.leased_until = utcnow() + timedelta(minutes=2)
+            successor.commit()
+
+    monkeypatch.setattr(notifications, "send_delivery", delayed_send)
+    with database() as stale:
+        assert await deliver_one(stale)
+
+    with database() as db:
+        row = db.get(NotificationDelivery, delivery_id)
+        assert row.status == "pending"
+        assert row.sent_at is None
+        assert row.attempts == 0
+        assert row.leased_until is not None
+        assert row.leased_until > utcnow()
+
+
+@pytest.mark.asyncio
+async def test_late_failing_sender_does_not_increment_successor_attempts(database, monkeypatch):
+    from datetime import timedelta
+    from app.models import utcnow
+    from app import notifications
+
+    with database() as db:
+        org = Organization(name="Delivery retry fencing")
+        db.add(org)
+        db.flush()
+        channel = NotificationChannel(organization_id=org.id, kind="ntfy", destination="ci-token", confirmed=True)
+        db.add(channel)
+        db.flush()
+        delivery = NotificationDelivery(channel_id=channel.id, event_key="delivery:retry-lease", message="down")
+        db.add(delivery)
+        db.commit()
+        delivery_id = delivery.id
+
+    async def delayed_error(_channel, _message):
+        with database() as successor:
+            row = successor.get(NotificationDelivery, delivery_id)
+            row.leased_until = utcnow() + timedelta(minutes=2)
+            successor.commit()
+        raise RuntimeError("Gateway timed out")
+
+    monkeypatch.setattr(notifications, "send_delivery", delayed_error)
+    with database() as stale:
+        assert await deliver_one(stale)
+
+    with database() as db:
+        row = db.get(NotificationDelivery, delivery_id)
+        assert row.status == "pending"
+        assert row.attempts == 0
+        assert row.leased_until > utcnow()
