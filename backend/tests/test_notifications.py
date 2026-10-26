@@ -127,7 +127,7 @@ async def test_late_sender_cannot_overwrite_new_delivery_lease(database, monkeyp
         assert row.sent_at is None
         assert row.attempts == 0
         assert row.leased_until is not None
-        assert row.leased_until > utcnow()
+        assert row.leased_until.replace(tzinfo=__import__('datetime').timezone.utc) > utcnow()
 
 
 @pytest.mark.asyncio
@@ -163,4 +163,4 @@ async def test_late_failing_sender_does_not_increment_successor_attempts(databas
         row = db.get(NotificationDelivery, delivery_id)
         assert row.status == "pending"
         assert row.attempts == 0
-        assert row.leased_until > utcnow()
+        assert row.leased_until.replace(tzinfo=__import__('datetime').timezone.utc) > utcnow()

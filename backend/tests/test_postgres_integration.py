@@ -144,7 +144,7 @@ def test_postgres_concurrent_claim_avoids_duplicate_delivery():
         db.add(channel)
         db.flush()
         deliveries = [
-            NotificationDelivery(channel_id=channel.id, event_key=f"ci:delivery:claim:{n}", message="outage")
+            NotificationDelivery(channel_id=channel.id, event_key=f"ci:delivery:claim:{n}", message="outage", next_attempt_at=utcnow() - timedelta(days=1))
             for n in range(2)
         ]
         db.add_all(deliveries)
@@ -172,7 +172,7 @@ async def test_postgres_expired_delivery_lease_fencing(monkeypatch):
         channel = NotificationChannel(organization_id=org.id, kind="ntfy", destination="ci-topic", confirmed=True)
         db.add(channel)
         db.flush()
-        delivery = NotificationDelivery(channel_id=channel.id, event_key="ci:delivery:fencing", message="outage")
+        delivery = NotificationDelivery(channel_id=channel.id, event_key="ci:delivery:fencing", message="outage", next_attempt_at=utcnow() - timedelta(days=1))
         db.add(delivery)
         db.commit()
         delivery_id = delivery.id
