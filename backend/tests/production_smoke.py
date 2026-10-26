@@ -74,8 +74,10 @@ def main():
         eventually(lambda: request("/health")[0] == 200, "API + DB readiness")
         assert request("/health/worker")[0] == 503, "Worker should be initially absent"
 
+        worker_env = dict(os.environ, APP_ROLE="worker", CORS_ORIGINS="")
         worker = subprocess.Popen(
             [sys.executable, "-m", "app.worker"],
+            env=worker_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
         )
@@ -107,8 +109,10 @@ def main():
             row.last_seen_at = utcnow() - timedelta(minutes=3)
             db.commit()
         assert request("/health/worker")[0] == 503, "Stale heartbeat must fail health"
+        worker_env = dict(os.environ, APP_ROLE="worker", CORS_ORIGINS="")
         worker = subprocess.Popen(
             [sys.executable, "-m", "app.worker"],
+            env=worker_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
         )

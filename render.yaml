@@ -1,4 +1,6 @@
-# WARNING: All paid resources require user approval before Blueprint creation.
+# WARNING: All resources below are paid. Do NOT click Apply without user-approved billing.
+# Production role separation: browser CORS + webhook secret required only for API.
+# Estimated baseline compute: 3 x 0.5c-512mb services + 1 x 0.1c-256mb Postgres.
 services:
   - type: web
     name: sitenobet-api
@@ -39,6 +41,8 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: APP_ROLE
+        value: worker
       - key: DATABASE_URL
         fromDatabase:
           name: sitenobet-db

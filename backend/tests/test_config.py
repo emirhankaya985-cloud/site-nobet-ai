@@ -34,3 +34,15 @@ def test_production_settings_accept_explicit_https():
 def test_production_settings_reject_unsafe_config(overrides):
     with pytest.raises(RuntimeError):
         validate_production_settings(production(**overrides))
+
+
+def test_production_worker_does_not_need_browser_cors_or_webhook_secret():
+    validate_production_settings(production(
+        app_role="worker", cors_origins=[], telegram_bot_token="test-token",
+        telegram_webhook_secret="",
+    ))
+
+
+def test_production_rejects_unknown_app_role():
+    with pytest.raises(RuntimeError):
+        validate_production_settings(production(app_role="unknown"))

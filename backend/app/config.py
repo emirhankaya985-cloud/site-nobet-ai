@@ -12,6 +12,7 @@ class Settings(BaseModel):
     telegram_webhook_secret: str = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
     ntfy_base_url: str = os.getenv("NTFY_BASE_URL", "https://ntfy.sh")
     environment: str = os.getenv("APP_ENV", "development")
+    app_role: str = os.getenv("APP_ROLE", "api")
     check_timeout: int = 10
 
 
@@ -23,10 +24,12 @@ def validate_production_settings(settings: Settings) -> None:
         raise RuntimeError("SESSION_SECRET must be strong (32+ characters) in production")
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise RuntimeError("PostgreSQL DATABASE_URL required in production")
-    if not settings.cors_origins:
+    if settings.app_role not in ("api", "worker"):
+        raise RuntimeError("APP_ROLE must be api or worker")
+    if settings.app_role == "api" and not settings.cors_origins:
         raise RuntimeError("Set explicit HTTPS CORS_ORIGINS in production")
     from urllib.parse import urlsplit
-    for origin in settings.cors_origins:
+    for origin in settings.cors_origins if settings.app_role == "api" else []:
         parsed = urlsplit(origin)
         if (parsed.scheme != "https" or not parsed.hostname or parsed.username
                 or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment
@@ -35,7 +38,7 @@ def validate_production_settings(settings: Settings) -> None:
     target = urlsplit(settings.ntfy_base_url)
     if target.scheme != "https" or not target.hostname or target.username or target.password or target.query or target.fragment:
         raise RuntimeError("Production NTFY_BASE_URL must be an HTTPS endpoint without credentials")
-    if settings.telegram_bot_token and len(settings.telegram_webhook_secret) < 16:
+    if settings.app_role == "api" and settings.telegram_bot_token and len(settings.telegram_webhook_secret) < 16:
         raise RuntimeError("TELEGRAM_WEBHOOK_SECRET required when Telegram is enabled")
 
 
