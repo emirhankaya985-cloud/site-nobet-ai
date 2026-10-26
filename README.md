@@ -2,7 +2,7 @@
 
 A multi-tenant web monitoring SaaS MVP prototype: independent Python background worker, FastAPI API, PostgreSQL with Alembic, Telegram / ntfy event outbox, and a responsive Next.js dashboard.
 
-> **Development status (2026-10-24):** Source uploaded to the public 985 GitHub repository and GitHub CI is green (backend 43 tests, PostgreSQL migration, dependency audit, frontend build, and both Docker builds). The service is NOT production-ready or deployed. Independent worker heartbeat, email verification, password reset, real Telegram/ntfy incident drill, and the seven-day pilot remain outstanding.
+> **Development status (2026-10-26):** Verified GitHub CI [#40280592303](https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/40280592303) on commit `83d94891`: all 3 jobs green; 55 default backend tests passed (6 PostgreSQL-only tests intentionally skipped in that step), then all **6 real PostgreSQL 17 integration tests passed** separately; dependency audit, PostgreSQL migrations, frontend build, and Docker builds succeeded. **This is CI acceptance, NOT production acceptance.** SiteNöbet has not been deployed to Render; real Telegram/ntfy delivery, external outage/recovery drill, independently watched worker heartbeat, backup/restore and 7-day pilot remain unverified.
 
 ## Architecture
 
@@ -85,10 +85,12 @@ A GitHub Actions workflow is included. Do not report CI as passed until real Act
 
 ## Outstanding production acceptance criteria
 
-- The public repository `emirhankaya985-cloud/site-nobet-ai` contains 56 source files. GitHub Actions run 40069640261 passed all 3 jobs (backend, frontend, Docker). Never push `.env`.
+- Current source and test evidence: [GitHub Actions #40280592303](https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/40280592303), commit `83d94891`, 55 general + 6 real PostgreSQL test passes; all backend, frontend and Docker CI jobs green. Never push `.env`.
 - GitHub CI has validated frontend installation, build, TypeScript, lint, Docker builds, backend tests, pip-audit, and PostgreSQL migration. Production-host PostgreSQL and startup tests are **unverified**.
 - Email verification, password reset, complete organization member management, billing, production-grade rate limiting, scheduled emailed reports, per-channel channel management, alert analytics, 24-hour / 7-day / 30-day response graphs, and broader recovery / TLS tests remain.
-- Real delivery to Telegram / ntfy and real HTTP outage / recovery, independent heartbeat watch, backup restore, multi-worker Postgres stress test and 7-day pilot remain **unverified**.
+- **Real multi-worker PostgreSQL integration smoke is now verified in CI** (monitor and notification claims, stale lease fencing, tenant isolation), but sustained high-volume stress, kill/restart/failover and production-host concurrency remain **unverified**.
+- Outbox delivery is **at-least-once**, not guaranteed exactly-once: a crash after an external provider accepted a message but before local commit can produce a duplicate retry. Claim fencing protects database state from stale worker writes, but cannot make a remote Telegram/ntfy send transactional.
+- Real delivery to Telegram / ntfy and live HTTP outage / recovery, independent heartbeat alert, backup restore, and 7-day pilot remain **unverified**.
 
 ## Security
 
