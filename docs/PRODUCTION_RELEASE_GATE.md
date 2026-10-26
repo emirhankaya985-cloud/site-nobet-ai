@@ -1,43 +1,30 @@
-# SiteNöbet AI — Production release gate
+# SiteNöbet AI — strict 0 TL production gate
 
-**Current verdict: code/CI hardening in progress; PRODUCTION NOT ACCEPTED.**
+## Absolute cost rule
 
-## Costs & explicit owner approval
+The owner explicitly requires **zero TL**. **Do not create paid Render resources or change Neon/GitHub/Render plans.** Existing Free Neon project: `sitenobet-ai-free` (aws-eu-central-1). Render Blueprint in `render.yaml` now defines only two `plan: free` web services. GitHub Actions scheduled worker uses Free public-repo runners, subject to GitHub policy and reliability limitations.
 
-Render's free web instances spin down after 15 minutes of inactivity; Render's free PostgreSQL expires after 30 days. Free plans are not appropriate for an always-on public uptime monitor. Background workers require paid compute.
+## Existing technical evidence
 
-The `render.yaml` Blueprint declares four **paid** resources: web frontend (`0.5c-512mb`), FastAPI web (`0.5c-512mb`), dedicated worker (`0.5c-512mb`), and PostgreSQL (`0.1c-256mb`). Reference baseline is **around US $27 per month** (three $7 services and a $6 database), excluding variable charges, currency conversion and taxes. Check current checkout pricing before applying.
+- GitHub pipeline: https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/40288528400 — 3/3 CI PASS on free-scheduler commit `08f6300d`.
+- Prior production-mode real-process and frontend HTTP startup gates: https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/40282414672 — PASS.
+- API + DB + worker, worker failure/restart, cross-tenant access, frontend security headers, Docker, PostgreSQL integration and migration gates passed in ephemeral CI.
 
-**Never create or apply the Blueprint without explicit owner approval.** No cost has been authorized yet.
+## Setup sequence (do not reveal secrets)
 
-## Required variables / secrets — names only
+1. Existing Neon Free project `sitenobet-ai-free` has database `sitenobet`; copy its connection string using Neon Dashboard; never post it in chat or commit.
+2. Owner configures GitHub Secrets: `SITENOBET_DATABASE_URL`, `SITENOBET_SESSION_SECRET` (and optional `SITENOBET_TELEGRAM_BOT_TOKEN`).
+3. Owner sets GitHub Actions variable `SITENOBET_FREE_MONITOR_ENABLED=true`, then triggers the `SiteNobet Free Scheduled Monitor` workflow manually and verifies a successful log. GitHub schedule runs every nominal 15 min UTC and may be delayed or skipped.
+4. Configure the two Render **Free** web services *only* after DB credentials and exact HTTPS origins exist. API: `APP_ENV=production`, `APP_ROLE=api`, `SCHEDULER_MODE=cron`, shared `DATABASE_URL` and `SESSION_SECRET`, `CORS_ORIGINS`. Frontend: `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CHECK_INTERVAL_SECONDS=900`. Render Free web services may sleep and cold-start.
+5. Limit to three monitors per organization at 900-second intervals and explicitly label as **free pilot**. Confirm authorized destinations for Telegram/ntfy. Check Neon quota usage regularly.
 
-- FastAPI: `APP_ENV=production`, `APP_ROLE=api` (implicit default), `DATABASE_URL` (Render Postgres), `SESSION_SECRET` (shared generated value from worker), `CORS_ORIGINS` (exact HTTPS web domain).
-- If Telegram is enabled: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` (16+ chars) on API; `TELEGRAM_BOT_TOKEN` on worker. Set Telegram `setWebhook` to the public HTTPS API webhook with the matching `secret_token`.
-- Worker: `APP_ENV=production`, `APP_ROLE=worker`, shared `DATABASE_URL` and `SESSION_SECRET`. Worker does **not** require web CORS or Telegram webhook secret.
-- Frontend: `NEXT_PUBLIC_API_URL` set to the API's final HTTPS origin **before build**.
-- Optional: `NTFY_BASE_URL` HTTPS endpoint on both API and worker if overriding the default.
+## Still required before full acceptance
 
-**Never place secret values into a public issue, repository commit or this report.** User-managed variable values need verification by name, not disclosure.
+- Actual authenticated user end-to-end dashboard and API access on HTTPS.
+- Real user-approved test Telegram and ntfy notification and controlled outage/recovery.
+- Independent watcher not hosted only inside the monitored worker itself.
+- Tested backup/restore, retry/lease crash scenarios, auth hardening including email verification and password recovery.
+- Seven-day observation period plus documented dropped/delayed GitHub schedule events and data staleness.
+- GitHub main branch protection is off and should be enabled in repository Settings.
 
-## CI gates before go-live
-
-1. GitHub main CI must pass backend unit tests, PostgreSQL integration tests, production-configured API/worker process smoke, PostgreSQL migration, dependency audit, frontend lint/typecheck/build and both Docker builds.
-2. Worker health (`GET /health/worker`) must show 200 while worker lives, 503 after stale heartbeat, 200 after restart. API `GET /health` must require database and applied migrations.
-3. Verify TLS, live authorization isolation, queue fencing and retry, negative security scenarios and rate limits.
-4. Branch ruleset: protect `main`; require backend, frontend and docker CI checks, block force push and deletion.
-
-## Live acceptance (required; not covered by ephemeral CI)
-
-1. Deploy approved services with correct origins and secrets. Confirm API, worker and frontend health checks.
-2. Verify Telegram delivery using a **user-approved test chat**, and ntfy delivery using a **test topic**; record provider receipt IDs without logging credentials or secret topic URLs.
-3. Run a controlled outage -> DOWN -> recovery -> UP test **only against an owned/authorized target**, verify correct notifications and tenant isolation.
-4. Add **independent external** watchdog against `/health/worker`, alert on 503 and unreachable HTTP. An in-process heartbeat without an external observer cannot alert on worker failure.
-5. Validate database backup/export and restoration in a disposable environment. Record RPO/RTO; rehearse rollback.
-6. Run at least 7 days with observation logs and clear availability gaps. Only then consider full production acceptance.
-
-## Important delivery limitation
-
-Remote Telegram/ntfy sends are not atomic with the local database commit. If the provider accepts a message but the worker crashes before marking it sent, a retry may duplicate it. Lease fencing prevents stale local state writes but does not provide exactly-once remote delivery.
-
-Keep no-charge CI work separate from deployment acceptance. Never claim FULL PASS just because builds are green.
+**Honest verdict:** free pilot can be functional, but uninterrupted 24/7 monitoring or guaranteed SLA is **not achievable reliably with the free scheduler and sleeping free API**. Do not mark FULL PASS based only on CI.

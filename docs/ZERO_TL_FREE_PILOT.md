@@ -2,13 +2,13 @@
 
 ## Cost policy
 
-**Only Free tiers. No paid Render worker or managed Render Postgres.** A GitHub Actions scheduled workflow drives bounded worker batches against a separately configured Free PostgreSQL database such as Neon Free. The website/API may be served by free hosting for a small pilot, but these providers can sleep, throttle, suspend, or have quotas.
+**Only Free tiers. No paid Render worker or managed Render Postgres.** A GitHub Actions scheduled workflow drives bounded worker batches against the dedicated Neon Free project `sitenobet-ai-free`, now provisioned in Frankfurt. The website/API may be served by free hosting for a small pilot, but these providers can sleep, throttle, suspend, or have quotas.
 
 This **cannot promise uninterrupted 24/7 monitoring, exact 15-minute checks or guaranteed delivery**. GitHub may delay/drop scheduled runs and disables cron in inactive public repositories after 60 days. Free Neon quotas may exhaust and pause database compute. Don't market this as professional-grade uptime.
 
 ## Setup
 
-1. Keep the repo **public**; verify the Neon account and select only the **Free** plan. Create a dedicated SiteNöbet PostgreSQL database; do not share another app's production DB.
+1. Keep the repo **public**. The dedicated **Free** Neon project `sitenobet-ai-free` has been created in Frankfurt with its own database `sitenobet`; do not reuse another project's database.
 2. Configure GitHub repository **Actions secrets** (values go only in GitHub Secrets):
    - `SITENOBET_DATABASE_URL`: the dedicated Neon PostgreSQL connection string (TLS enabled).
    - `SITENOBET_SESSION_SECRET`: a high-entropy value 32+ characters, **also used by API if hosted**.
