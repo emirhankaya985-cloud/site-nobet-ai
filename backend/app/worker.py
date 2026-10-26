@@ -104,6 +104,9 @@ async def run_once(*, max_checks: int = 20, max_notifications: int = 50,
                 break
         deliveries += 1
     with session_factory()() as db:
+        # Nightly retention prevents exhausting the 1 GB Neon Free storage budget.
+        if utcnow().hour == 3 and utcnow().minute < 15:
+            cleanup(db)
         heartbeat(db)
     log.info("scheduled run complete checks=%d notifications=%d", checks, deliveries)
     return {"checks": checks, "notifications": deliveries}
