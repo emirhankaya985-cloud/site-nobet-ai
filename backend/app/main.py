@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .auth import current_user, hash_password, make_token, org_membership, verify_password
@@ -95,8 +96,23 @@ def monitor_json(m: Monitor):
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "api"}
+def health(db: Session = Depends(db_session)):
+    # Render should not mark an API healthy when PostgreSQL or migrations are down.
+    try:
+        db.scalar(select(WorkerHeartbeat.worker_name).limit(1))
+    except SQLAlchemyError as exc:
+        raise HTTPException(503, "Database unavailable or migrations missing") from exc
+    return {"status": "ok", "service": "api", "database": "ok"}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/health/worker")

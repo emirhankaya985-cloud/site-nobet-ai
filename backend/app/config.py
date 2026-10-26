@@ -15,11 +15,32 @@ class Settings(BaseModel):
     check_timeout: int = 10
 
 
+def validate_production_settings(settings: Settings) -> None:
+    """Fail closed before the server starts if runtime config is unsafe."""
+    if settings.environment != "production":
+        return
+    if settings.session_secret == "development-only-change-this-secret" or len(settings.session_secret) < 32:
+        raise RuntimeError("SESSION_SECRET must be strong (32+ characters) in production")
+    if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+        raise RuntimeError("PostgreSQL DATABASE_URL required in production")
+    if not settings.cors_origins:
+        raise RuntimeError("Set explicit HTTPS CORS_ORIGINS in production")
+    from urllib.parse import urlsplit
+    for origin in settings.cors_origins:
+        parsed = urlsplit(origin)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment
+                or "*" in origin):
+            raise RuntimeError("Production CORS_ORIGINS must be explicit HTTPS origins")
+    target = urlsplit(settings.ntfy_base_url)
+    if target.scheme != "https" or not target.hostname or target.username or target.password or target.query or target.fragment:
+        raise RuntimeError("Production NTFY_BASE_URL must be an HTTPS endpoint without credentials")
+    if settings.telegram_bot_token and len(settings.telegram_webhook_secret) < 16:
+        raise RuntimeError("TELEGRAM_WEBHOOK_SECRET required when Telegram is enabled")
+
+
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    if settings.environment == "production" and (settings.session_secret == "development-only-change-this-secret" or len(settings.session_secret) < 32):
-        raise RuntimeError("SESSION_SECRET must be at least 32 characters in production")
-    if settings.environment == "production" and not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
-        raise RuntimeError("PostgreSQL DATABASE_URL required in production")
+    validate_production_settings(settings)
     return settings

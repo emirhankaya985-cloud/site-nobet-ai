@@ -93,3 +93,28 @@ def test_pause_marks_unknown_time_and_does_not_falsely_recover(client,two_users,
         assert incident.closed_at is not None
     r=client.patch(f"/organizations/{org}/monitors/{mid}",headers=h(person),json={"paused":False})
     assert r.json()["status"] == "UNKNOWN"
+
+
+def test_readiness_requires_database(client, monkeypatch):
+    from app import main
+    from fastapi import HTTPException
+    from sqlalchemy.exc import OperationalError
+    assert client.get("/health").json()["database"] == "ok"
+
+    class OfflineDatabase:
+        def scalar(self, _query):
+            raise OperationalError("SELECT", {}, Exception("offline"))
+
+    try:
+        main.health(OfflineDatabase())
+        assert False, "Database outage must not be reported healthy"
+    except HTTPException as exc:
+        assert exc.status_code == 503
+
+
+def test_secure_api_response_headers(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["cache-control"] == "no-store"

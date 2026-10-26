@@ -34,6 +34,14 @@ jobs:
         run: alembic upgrade head && alembic downgrade base && alembic upgrade head
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
+      - name: Production-configured process smoke (API + worker + PostgreSQL)
+        run: python tests/production_smoke.py
+        env:
+          CI: 'true'
+          APP_ENV: production
+          DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
+          SESSION_SECRET: ci-process-smoke-not-a-real-production-secret-2026
+          CORS_ORIGINS: https://dashboard.example.invalid
       - name: PostgreSQL integration smoke (ephemeral CI only)
         run: pytest -q tests/test_postgres_integration.py
         env:
