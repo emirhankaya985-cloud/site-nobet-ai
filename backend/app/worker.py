@@ -1,6 +1,11 @@
-"""Run separately from FastAPI. Never use GitHub Actions as uptime scheduler."""
+"""Worker: always-on runtime, or an explicitly limited zero-budget scheduled pilot.
+
+Scheduled GitHub Actions may be delayed or skipped. Do not claim 24/7 availability.
+"""
+import argparse
 import asyncio
 import logging
+import time
 from datetime import timedelta, timezone
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
@@ -76,6 +81,34 @@ def heartbeat(db: Session):
     db.commit()
 
 
+async def run_once(*, max_checks: int = 20, max_notifications: int = 50,
+                   deadline_seconds: float = 360.0) -> dict[str, int]:
+    """Process a bounded batch and exit. Scheduled GitHub runner must never loop forever."""
+    if max_checks < 0 or max_notifications < 0 or deadline_seconds <= 0:
+        raise ValueError("Invalid scheduled worker limits")
+    end = time.monotonic() + deadline_seconds
+    with session_factory()() as db:
+        heartbeat(db)
+    checks = deliveries = 0
+    for _ in range(max_checks):
+        if time.monotonic() >= end:
+            break
+        if not await check_one():
+            break
+        checks += 1
+    for _ in range(max_notifications):
+        if time.monotonic() >= end:
+            break
+        with session_factory()() as db:
+            if not await deliver_one(db):
+                break
+        deliveries += 1
+    with session_factory()() as db:
+        heartbeat(db)
+    log.info("scheduled run complete checks=%d notifications=%d", checks, deliveries)
+    return {"checks": checks, "notifications": deliveries}
+
+
 async def main():
     last_cleanup = None
     while True:
@@ -95,4 +128,13 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="SiteNobet worker")
+    parser.add_argument("--once", action="store_true", help="Run bounded scheduled checks and exit")
+    parser.add_argument("--max-checks", type=int, default=20)
+    parser.add_argument("--max-notifications", type=int, default=50)
+    arguments = parser.parse_args()
+    if arguments.once:
+        asyncio.run(run_once(max_checks=arguments.max_checks,
+                             max_notifications=arguments.max_notifications))
+    else:
+        asyncio.run(main())

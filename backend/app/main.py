@@ -121,7 +121,8 @@ def worker_health(db: Session = Depends(db_session)):
     if not row:
         raise HTTPException(503, "Worker has not reported a heartbeat")
     last = row.last_seen_at.replace(tzinfo=row.last_seen_at.tzinfo or __import__("datetime").timezone.utc)
-    if (utcnow() - last).total_seconds() > 60:
+    threshold_seconds = 32 * 60 if get_settings().scheduler_mode == "cron" else 60
+    if (utcnow() - last).total_seconds() > threshold_seconds:
         raise HTTPException(503, "Worker heartbeat is stale")
     return {"status":"ok", "last_seen_at":row.last_seen_at}
 
@@ -173,7 +174,11 @@ def create_monitor(org_id: str, data: CreateMonitor, user: User = Depends(curren
     org = db.get(Organization, org_id)
     if org is None:
         raise HTTPException(404, "Organization not found")
-    limit, allowed = {"starter": (3, [300]), "pro": (20, [60, 180, 300]), "agency": (100, [60, 180, 300])}.get(org.plan, (3, [300]))
+    if get_settings().scheduler_mode == "cron":
+        # The 0-TL scheduled runner is deliberately slower than an always-on worker.
+        limit, allowed = (3, [900])
+    else:
+        limit, allowed = {"starter": (3, [300]), "pro": (20, [60, 180, 300]), "agency": (100, [60, 180, 300])}.get(org.plan, (3, [300]))
     if (db.scalar(select(func.count(Monitor.id)).where(Monitor.organization_id == org_id)) or 0) >= limit:
         raise HTTPException(403, "Plan monitor limit reached")
     if data.interval_seconds not in allowed:

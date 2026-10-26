@@ -13,6 +13,7 @@ class Settings(BaseModel):
     ntfy_base_url: str = os.getenv("NTFY_BASE_URL", "https://ntfy.sh")
     environment: str = os.getenv("APP_ENV", "development")
     app_role: str = os.getenv("APP_ROLE", "api")
+    scheduler_mode: str = os.getenv("SCHEDULER_MODE", "continuous")
     check_timeout: int = 10
 
 
@@ -26,6 +27,8 @@ def validate_production_settings(settings: Settings) -> None:
         raise RuntimeError("PostgreSQL DATABASE_URL required in production")
     if settings.app_role not in ("api", "worker"):
         raise RuntimeError("APP_ROLE must be api or worker")
+    if settings.scheduler_mode not in ("continuous", "cron"):
+        raise RuntimeError("SCHEDULER_MODE must be continuous or cron")
     if settings.app_role == "api" and not settings.cors_origins:
         raise RuntimeError("Set explicit HTTPS CORS_ORIGINS in production")
     from urllib.parse import urlsplit

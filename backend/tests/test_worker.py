@@ -72,3 +72,35 @@ async def test_worker_discards_stale_probe_after_lease_is_reclaimed(database, mo
         assert monitor.status == "UNKNOWN"
         assert monitor.last_checked_at is None
         assert monitor.leased_until is not None
+
+
+@pytest.mark.asyncio
+async def test_one_shot_worker_processes_bounded_batches(monkeypatch, database):
+    from app import worker
+    stats = {"checks": 0, "deliveries": 0, "heartbeat": 0}
+
+    async def check():
+        stats["checks"] += 1
+        return stats["checks"] < 3
+
+    async def deliver(_db):
+        stats["deliveries"] += 1
+        return stats["deliveries"] < 4
+
+    def beat(_db):
+        stats["heartbeat"] += 1
+
+    monkeypatch.setattr(worker, "session_factory", lambda: database)
+    monkeypatch.setattr(worker, "heartbeat", beat)
+    monkeypatch.setattr(worker, "check_one", check)
+    monkeypatch.setattr(worker, "deliver_one", deliver)
+    result = await worker.run_once(max_checks=5, max_notifications=8)
+    assert result == {"checks": 2, "notifications": 3}
+    assert stats == {"checks": 3, "deliveries": 4, "heartbeat": 2}
+
+
+@pytest.mark.asyncio
+async def test_one_shot_worker_rejects_invalid_limits():
+    from app.worker import run_once
+    with pytest.raises(ValueError):
+        await run_once(max_checks=-1)

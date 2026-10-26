@@ -1,0 +1,43 @@
+name: SiteNobet Free Scheduled Monitor
+on:
+  schedule:
+    # 15-minute nominal cadence, away from the start of each hour.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sitenobet-free-scheduled-worker
+  cancel-in-progress: false
+jobs:
+  monitor:
+    if: ${{ vars.SITENOBET_FREE_MONITOR_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: production
+      APP_ROLE: worker
+      SCHEDULER_MODE: cron
+      DATABASE_URL: ${{ secrets.SITENOBET_DATABASE_URL }}
+      SESSION_SECRET: ${{ secrets.SITENOBET_SESSION_SECRET }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.SITENOBET_TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify configured Free-tier secrets
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$SESSION_SECRET" ]; then
+            echo 'SiteNobet free monitor secrets missing. Set Actions secrets before enabling.' >&2
+            exit 1
+          fi
+      - name: Install bounded worker
+        run: pip install --disable-pip-version-check .
+      - name: Apply pending schema migrations
+        run: alembic upgrade head
+      - name: Run one scheduled monitor batch
+        run: python -m app.worker --once --max-checks 20 --max-notifications 50

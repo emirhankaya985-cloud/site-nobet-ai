@@ -46,3 +46,14 @@ def test_production_worker_does_not_need_browser_cors_or_webhook_secret():
 def test_production_rejects_unknown_app_role():
     with pytest.raises(RuntimeError):
         validate_production_settings(production(app_role="unknown"))
+
+
+def test_production_cron_mode_is_valid():
+    validate_production_settings(production(
+        app_role="worker", scheduler_mode="cron", cors_origins=[],
+    ))
+
+
+def test_production_rejects_unknown_scheduler():
+    with pytest.raises(RuntimeError):
+        validate_production_settings(production(scheduler_mode="magic"))
