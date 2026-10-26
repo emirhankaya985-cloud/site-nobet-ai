@@ -42,6 +42,31 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
           SESSION_SECRET: ci-process-smoke-not-a-real-production-secret-2026
           CORS_ORIGINS: https://dashboard.example.invalid
+      - name: Free-tier scheduled CLI startup with no external probes
+        run: |
+          python - <<'PY'
+          from sqlalchemy import func, select
+          from app.database import session_factory
+          from app.models import Monitor, NotificationDelivery
+          with session_factory()() as db:
+              assert db.scalar(select(func.count()).select_from(Monitor)) == 0, "Cron smoke must not probe external websites"
+              assert db.scalar(select(func.count()).select_from(NotificationDelivery)) == 0, "Cron smoke must not send notifications"
+          PY
+          python -m app.worker --once --max-checks 0 --max-notifications 0
+          python - <<'PY'
+          from app.database import session_factory
+          from app.models import WorkerHeartbeat, utcnow
+          with session_factory()() as db:
+              heartbeat = db.get(WorkerHeartbeat, "main")
+              assert heartbeat is not None
+              assert (utcnow() - heartbeat.last_seen_at).total_seconds() < 60
+          PY
+        env:
+          APP_ENV: production
+          APP_ROLE: worker
+          SCHEDULER_MODE: cron
+          DATABASE_URL: postgresql://test:test@localhost:5432/sitenobet_test
+          SESSION_SECRET: ci-process-smoke-not-a-real-production-secret-2026
       - name: PostgreSQL integration smoke (ephemeral CI only)
         run: pytest -q tests/test_postgres_integration.py
         env:

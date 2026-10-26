@@ -99,3 +99,13 @@ A GitHub Actions workflow is included. Do not report CI as passed until real Act
 ## Security
 
 See [SECURITY.md](SECURITY.md). Never send API tokens or credentials over chat or commit them to public code. Any external monitoring target must be owned or authorized by its owner.
+
+## Hosted $0 Free pilot links (2026-10-26)
+
+- Web panel: https://sitenobet-web-free.onrender.com — Render Free web deployed.
+- API: https://sitenobet-api-free.onrender.com — **created on Render Free but intentionally FAIL-CLOSED** until the owner securely configures `DATABASE_URL` and a strong `SESSION_SECRET` via Render Environment (not source/chat). At last check, the API deployment status was **update_failed**, with a production secret validation error.
+- Neon Free PostgreSQL: dedicated `sitenobet-ai-free` project, created but schema pending Alembic migration. The API start command runs `alembic upgrade head` after secrets are provided.
+- GitHub scheduled monitor: workflow triggered on schedule but is **skipped** until Actions variable and Secrets are set in GitHub Settings.
+- Live public account registration and provider notifications have NOT passed end-to-end acceptance. The UI is **only a public pilot shell**, not a working end-to-end SaaS yet.
+
+Absolutely no paid resources created. Free Render web services can sleep and GitHub scheduled jobs can be delayed. No uptime SLA.

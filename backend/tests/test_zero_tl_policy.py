@@ -20,3 +20,11 @@ def test_free_scheduler_requires_explicit_enable_and_secrets():
     assert "secrets.SITENOBET_SESSION_SECRET" in yaml
     assert "python -m app.worker --once" in yaml
     assert "cancel-in-progress: false" in yaml
+
+
+def test_free_pilot_does_not_advertise_five_minute_or_instant_alerts():
+    landing = (ROOT / "frontend/app/page.tsx").read_text(encoding="utf-8")
+    assert "5 dk ücretsiz kontrol" not in landing
+    assert "anında haberdar olun" not in landing
+    assert "15 dk hedef kontrol" in landing
+    assert "garantisi yoktur" in landing
