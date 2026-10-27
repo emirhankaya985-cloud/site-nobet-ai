@@ -1,6 +1,6 @@
 # SiteNöbet AI
 
-> **STRICT ZERO-COST MODE (26 October 2026):** Only Free tiers allowed. The dedicated `sitenobet-ai-free` Neon Free database is provisioned. The GitHub Actions scheduled worker is written but **disabled until owner-configured `SITENOBET_DATABASE_URL` and `SITENOBET_FREE_MONITOR_ENABLED=true` are present**. The worker does not need the API session secret. All new Free-mode source/CI checks passed; **no hosted monitoring is active yet and no 24/7 SLA is promised**.
+> **STRICT ZERO-COST MODE (26 October 2026):** Only Free tiers allowed. The dedicated `sitenobet-ai-free` Neon Free database is provisioned. The GitHub Actions scheduled worker is written but **disabled until owner-configured `SITENOBET_DATABASE_URL` exists**. The worker does not need the API session secret. All new Free-mode source/CI checks passed; **no hosted monitoring is active yet and no 24/7 SLA is promised**.
 >
 > **Start here:** [Free pilot setup](docs/ZERO_TL_FREE_PILOT.md). Render `render.yaml` now lists **only Free web services**; it does not create paid Postgres or a paid worker.
 
@@ -109,3 +109,6 @@ See [SECURITY.md](SECURITY.md). Never send API tokens or credentials over chat o
 - Live public account registration and provider notifications have NOT passed end-to-end acceptance. The UI is **only a public pilot shell**, not a working end-to-end SaaS yet.
 
 Absolutely no paid resources created. Free Render web services can sleep and GitHub scheduled jobs can be delayed. No uptime SLA.
+
+
+**27 October update:** The Free GitHub worker now automatically stays skipped until `SITENOBET_DATABASE_URL` is securely added; no GitHub Actions enable variable or worker `SESSION_SECRET` is required. API still needs its own strong `SESSION_SECRET` and dedicated Neon `DATABASE_URL`.

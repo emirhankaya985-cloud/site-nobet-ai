@@ -10,8 +10,25 @@ concurrency:
   group: sitenobet-free-scheduled-worker
   cancel-in-progress: false
 jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Detect configured Neon secret without revealing its value
+        id: check
+        env:
+          DATABASE_URL: ${{ secrets.SITENOBET_DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Configure SITENOBET_DATABASE_URL in Actions Secrets to enable the Free scheduler.'
+          fi
   monitor:
-    if: ${{ vars.SITENOBET_FREE_MONITOR_ENABLED == 'true' }}
+    needs: configuration
+    if: needs.configuration.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     defaults:
