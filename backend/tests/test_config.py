@@ -57,3 +57,17 @@ def test_production_cron_mode_is_valid():
 def test_production_rejects_unknown_scheduler():
     with pytest.raises(RuntimeError):
         validate_production_settings(production(scheduler_mode="magic"))
+
+
+def test_production_worker_ignores_api_session_secret():
+    validate_production_settings(production(
+        app_role="worker", scheduler_mode="cron", session_secret="",
+        cors_origins=[],
+    ))
+
+
+def test_production_api_still_rejects_default_session_secret():
+    with pytest.raises(RuntimeError):
+        validate_production_settings(production(
+            app_role="api", session_secret="development-only-change-this-secret",
+        ))

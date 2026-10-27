@@ -21,7 +21,12 @@ def validate_production_settings(settings: Settings) -> None:
     """Fail closed before the server starts if runtime config is unsafe."""
     if settings.environment != "production":
         return
-    if settings.session_secret == "development-only-change-this-secret" or len(settings.session_secret) < 32:
+    # Only the HTTP API issues and verifies bearer tokens. The scheduled worker
+    # never signs tokens and must not need to copy the API's secret into GitHub.
+    if settings.app_role == "api" and (
+        settings.session_secret == "development-only-change-this-secret"
+        or len(settings.session_secret) < 32
+    ):
         raise RuntimeError("SESSION_SECRET must be strong (32+ characters) in production")
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise RuntimeError("PostgreSQL DATABASE_URL required in production")

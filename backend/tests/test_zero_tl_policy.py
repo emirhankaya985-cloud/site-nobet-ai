@@ -17,7 +17,8 @@ def test_free_scheduler_requires_explicit_enable_and_secrets():
     yaml = (ROOT / ".github/workflows/free-monitor.yml").read_text(encoding="utf-8")
     assert "vars.SITENOBET_FREE_MONITOR_ENABLED == 'true'" in yaml
     assert "secrets.SITENOBET_DATABASE_URL" in yaml
-    assert "secrets.SITENOBET_SESSION_SECRET" in yaml
+    assert "secrets.SITENOBET_SESSION_SECRET" not in yaml
+    assert "SESSION_SECRET:" not in yaml
     assert "python -m app.worker --once" in yaml
     assert "cancel-in-progress: false" in yaml
 

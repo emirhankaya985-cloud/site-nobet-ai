@@ -22,7 +22,6 @@ jobs:
       APP_ROLE: worker
       SCHEDULER_MODE: cron
       DATABASE_URL: ${{ secrets.SITENOBET_DATABASE_URL }}
-      SESSION_SECRET: ${{ secrets.SITENOBET_SESSION_SECRET }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.SITENOBET_TELEGRAM_BOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +30,8 @@ jobs:
           python-version: '3.13'
       - name: Verify configured Free-tier secrets
         run: |
-          if [ -z "$DATABASE_URL" ] || [ -z "$SESSION_SECRET" ]; then
-            echo 'SiteNobet free monitor secrets missing. Set Actions secrets before enabling.' >&2
+          if [ -z "$DATABASE_URL" ]; then
+            echo 'SiteNobet database secret missing. Set SITENOBET_DATABASE_URL before enabling.' >&2
             exit 1
           fi
       - name: Install bounded worker

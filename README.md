@@ -1,6 +1,6 @@
 # SiteNöbet AI
 
-> **STRICT ZERO-COST MODE (26 October 2026):** Only Free tiers allowed. The dedicated `sitenobet-ai-free` Neon Free database is provisioned. The GitHub Actions scheduled worker is written but **disabled until owner-configured secrets and `SITENOBET_FREE_MONITOR_ENABLED=true` are present**. All new Free-mode source/CI checks passed; **no hosted monitoring is active yet and no 24/7 SLA is promised**.
+> **STRICT ZERO-COST MODE (26 October 2026):** Only Free tiers allowed. The dedicated `sitenobet-ai-free` Neon Free database is provisioned. The GitHub Actions scheduled worker is written but **disabled until owner-configured `SITENOBET_DATABASE_URL` and `SITENOBET_FREE_MONITOR_ENABLED=true` are present**. The worker does not need the API session secret. All new Free-mode source/CI checks passed; **no hosted monitoring is active yet and no 24/7 SLA is promised**.
 >
 > **Start here:** [Free pilot setup](docs/ZERO_TL_FREE_PILOT.md). Render `render.yaml` now lists **only Free web services**; it does not create paid Postgres or a paid worker.
 

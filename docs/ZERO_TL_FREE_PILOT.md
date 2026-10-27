@@ -11,11 +11,10 @@ This **cannot promise uninterrupted 24/7 monitoring, exact 15-minute checks or g
 1. Keep the repo **public**. The dedicated **Free** Neon project `sitenobet-ai-free` has been created in Frankfurt with its own database `sitenobet`; do not reuse another project's database.
 2. Configure GitHub repository **Actions secrets** (values go only in GitHub Secrets):
    - `SITENOBET_DATABASE_URL`: the dedicated Neon PostgreSQL connection string (TLS enabled).
-   - `SITENOBET_SESSION_SECRET`: a high-entropy value 32+ characters, **also used by API if hosted**.
    - Optional `SITENOBET_TELEGRAM_BOT_TOKEN`: only your SiteNöbet bot, authorized test chat. Never reuse or print another project's tokens.
 3. Set GitHub repository Actions variable `SITENOBET_FREE_MONITOR_ENABLED=true` **only after** secrets and database are ready. Until then scheduled runs are skipped without database access.
 4. Initialize and migrate the dedicated DB as a separate explicit deployment action, or use the guarded bootstrap step in the scheduled workflow when first enabled.
-5. Configure any hosted API with `APP_ENV=production`, `APP_ROLE=api`, `SCHEDULER_MODE=cron`, matching `DATABASE_URL` and `SESSION_SECRET`, and HTTPS `CORS_ORIGINS`. The frontend must be built with matching `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CHECK_INTERVAL_SECONDS=900`.
+5. Configure any hosted API with `APP_ENV=production`, `APP_ROLE=api`, `SCHEDULER_MODE=cron`, the same `DATABASE_URL` and an API-only strong `SESSION_SECRET`, and HTTPS `CORS_ORIGINS`. The frontend must be built with matching `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CHECK_INTERVAL_SECONDS=900`.
 6. Visit Actions → **SiteNobet Free Scheduled Monitor** → Run workflow to test the first job. Confirm logs without exposing credentials.
 7. Check data freshness. In cron mode `/health/worker` reports stale after approximately 32 minutes (rather than 60 seconds), which can still false-alarm on GitHub schedule delays.
 
@@ -42,8 +41,12 @@ The following two web services were created using the **Render Free** plan; neit
 
 **Owner-only missing steps (never paste secrets in chat):**
 1. Render Dashboard → `sitenobet-api-free` → Environment: configure `DATABASE_URL` with the dedicated Neon Free database URI and `SESSION_SECRET` with a securely random 32+ character secret. API should automatically migrate Neon schema on startup. Environment already has `APP_ENV=production`, `APP_ROLE=api`, `SCHEDULER_MODE=cron`, `CORS_ORIGINS=https://sitenobet-web-free.onrender.com`.
-2. Use the **same SESSION_SECRET** as `SITENOBET_SESSION_SECRET` in the GitHub repo Actions Secrets. Save the Neon URL as `SITENOBET_DATABASE_URL` in GitHub Actions Secrets.
+2. Save the Neon URL as `SITENOBET_DATABASE_URL` in GitHub Actions Secrets. The worker does **not** need the API's `SESSION_SECRET`; do not copy it to GitHub.
 3. Then set Actions repository variable `SITENOBET_FREE_MONITOR_ENABLED=true`. A scheduled trigger was observed but skipped due to the disabled gate. Manually run the workflow and check success.
 4. Validate API readiness, real login, consented test monitors and consented Telegram/ntfy channels. Do not enable public customer signup until full security review.
 
 **Security limit:** Connected tools may refuse passing Neon credential values across apps. This is expected and should not be circumvented. Use each provider's own secret-setting UI and never expose values in issues or commits.
+
+## 2026-10-27 — Reduced secret requirements
+
+The worker uses PostgreSQL monitoring state and notification outbox, not JWT authentication. Production `APP_ROLE=worker` no longer requires `SESSION_SECRET`; the HTTP API still requires a cryptographically strong `SESSION_SECRET` in its own Render environment. The GitHub Actions worker requires only `SITENOBET_DATABASE_URL` (and optional `SITENOBET_TELEGRAM_BOT_TOKEN`). This avoids duplicating an unnecessary sensitive secret across services.
