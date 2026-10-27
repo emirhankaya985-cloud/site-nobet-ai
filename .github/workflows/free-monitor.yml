@@ -1,5 +1,8 @@
 name: SiteNobet Free Scheduled Monitor
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/free-monitor.yml']
   schedule:
     # 15-minute nominal cadence, away from the start of each hour.
     - cron: '7,22,37,52 * * * *'

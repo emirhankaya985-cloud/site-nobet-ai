@@ -31,3 +31,8 @@ def test_free_pilot_does_not_advertise_five_minute_or_instant_alerts():
     assert "anında haberdar olun" not in landing
     assert "15 dk hedef kontrol" in landing
     assert "garantisi yoktur" in landing
+
+
+def test_free_worker_self_check_on_workflow_update():
+    scheduler = (ROOT / ".github/workflows/free-monitor.yml").read_text(encoding="utf-8")
+    assert "paths: ['.github/workflows/free-monitor.yml']" in scheduler
