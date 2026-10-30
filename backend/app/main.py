@@ -311,3 +311,7 @@ def reports(org_id: str, period_days: int = 1, user: User = Depends(current_user
             "uptime_percent":round((observed-down)/observed*100,3) if observed else None,
             "observed_seconds":observed, "unobserved_seconds":sum(m["unobserved_seconds"] for m in metrics),
             "confirmed_down_seconds":down, "monitors":metrics}
+
+# Four-module integration shares the existing account and organization boundary.
+from .business import router as business_router  # noqa: E402
+app.include_router(business_router)

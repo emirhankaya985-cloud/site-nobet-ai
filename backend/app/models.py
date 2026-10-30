@@ -152,3 +152,51 @@ class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeats"
     worker_name: Mapped[str] = mapped_column(String(80), primary_key=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BusinessLead(Base):
+    __tablename__ = "business_leads"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    source_id: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(150))
+    website: Mapped[str | None] = mapped_column(String(2048))
+    email: Mapped[str | None] = mapped_column(String(254))
+    email_source: Mapped[str | None] = mapped_column(String(2048))
+    delivery_state: Mapped[str] = mapped_column(String(30), default="unknown")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint("organization_id", "source_id"),)
+
+
+class ReviewDraft(Base):
+    __tablename__ = "review_drafts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    source_id: Mapped[str] = mapped_column(String(200))
+    review_text: Mapped[str] = mapped_column(Text)
+    reply_text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint("organization_id", "source_id"),)
+
+
+class MailClaim(Base):
+    __tablename__ = "business_mail_claims"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    lead_id: Mapped[str] = mapped_column(ForeignKey("business_leads.id"), unique=True)
+    recipient: Mapped[str] = mapped_column(String(254))
+    state: Mapped[str] = mapped_column(String(30), default="sending")
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint("organization_id", "recipient"),)
+
+
+class BusinessBatch(Base):
+    __tablename__ = "business_batches"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    day: Mapped[str] = mapped_column(String(10))
+    state: Mapped[str] = mapped_column(String(30), default="running")
+    __table_args__ = (UniqueConstraint("organization_id", "day"),)

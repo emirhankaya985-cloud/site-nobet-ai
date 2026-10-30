@@ -191,3 +191,24 @@ async def test_postgres_expired_delivery_lease_fencing(monkeypatch):
         assert row.status == "pending"
         assert row.sent_at is None
         assert row.leased_until is not None
+
+
+def test_postgres_concurrent_business_mail_deduplicates_recipient():
+    from app.models import BusinessLead
+    from app.business_mail import run_once
+    with session_factory()() as db:
+        org=Organization(name='Synthetic mail race')
+        db.add(org)
+        db.flush()
+        oid=org.id
+        db.add(NotificationChannel(organization_id=oid,kind='telegram',destination='123',confirmed=True))
+        for n in range(2):
+            db.add(BusinessLead(organization_id=oid,source_id=f'node/{n}',name='Synthetic',email='race@example.invalid',email_source='OSM business contact tag',delivery_state='not_sent'))
+        db.commit()
+    env=dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',BUSINESS_ORGANIZATION_ID=oid,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
+    calls=[]
+    def sender(claim, _):
+        calls.append(claim.id)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda _:run_once(session_factory(),env,sender),range(2)))
+    assert len(calls)==1
