@@ -1,31 +1,45 @@
-# İşletmePilot AI — dört modül
+# İşletmePilot — ortak uygulama
 
-Kapsam: LeadPilot CRM, YorumPilot yorum taslakları, SiteNöbet izleme,
-Müşteri Avcısı araştırma ve aday aktarımı. Diğer projeler dahil değildir.
+Kapsam yalnızca dört modül: Müşteri Avcısı, LeadPilot, YorumPilot, SiteNöbet.
 
-SiteNöbet kullanıcı/organization/notification altyapısı ortak temel olarak seçildi.
-Bu değişiklik yalnızca aktarım sözleşmesidir; canlı entegrasyon değildir.
+## Uygulanan parçalar
 
-`app.lead_import.parse_import` saf doğrulayıcıdır; ağa bağlanmaz, veritabanına
-veya dosyaya kişisel veri yazmaz. Organization kimliği yalnızca kimliği doğrulanmış
-API bağlamından gelmelidir. Kaynak kimliği + organization için sabit aktarım anahtarı
-üretir. Mail geçmişindeki accepted/sending/uncertain/rejected/deferred durumlarını
-korur; geçmiş bilinmiyorsa unknown kullanır. Aktarım mail gönderim izni oluşturmaz.
-Kalıcı CRM katmanı ayrıca organization + source_id unique constraint ve alıcı
-tekrar kontrolünü uygulamalıdır. URL doğrulaması URL'yi indirme yetkisi değildir;
-indirme gerektiğinde mevcut SSRF korumaları kullanılmalıdır.
+- Var olan kullanıcı/organization yetkilendirmesi altında kalıcı CRM ve yorum tabloları.
+- Kaynak kimliği ile tekrar aktarım engeli; immutable geçmiş ve tenant izolasyonu.
+- LeadPilot v0.1.8 kaynak paketinden ücretsiz niyet sınıflandırması.
+- YorumPilot kaynak manifestinden ücretsiz Türkçe/İngilizce yorum analizi ve taslak.
+- `/business` ortak paneli; CRM, yorum taslakları, izleme ve Telegram ayarlarına erişim.
+- Günlük ortak pipeline: OSM araştırma → CRM → en fazla 5 SMTP denemesi → Telegram outbox → site izleme.
+- SMTP öncesi kalıcı claim; alıcı başına unique kayıt; belirsiz/crash durumunda mail tekrar kapalı.
+- Gönderilen mailin tam metni ortak bildirim outbox'ına yazılır. Telegram API makbuzu mevcut worker tarafından doğrulanır.
+- Yedek slot aynı başarılı günlük mail batch'ini tekrar başlatmaz. Kaynak hatası SMTP öncesiyse güvenli tekrar mümkündür.
+- Legacy geçmiş aktarımı kaynak DB'de READ ONLY transaction kullanır. Eski taslaklar otomatik mail iznine dönüşmez.
 
-## Kalan uygulama
+## Kaynak kökeni
 
-1. CRM tabloları ve geriye uyumlu migration; tenant izolasyonlu import API.
-2. Müşteri Avcısı tarafında kimliği doğrulanmış aktarım/outbox adaptörü.
-3. YorumPilot taslakları ve insan onayı; gerçek Google bağlantısı ayrı doğrulanır.
-4. Ortak panel ve tenant'a bağlı Telegram olayları; mail yalnızca tek göndericiye ait.
-5. PostgreSQL, API, panel ve Telegram uçtan uca kanıtları.
+LeadPilot-AI-v0.1.8-Sol-Ready(1).zip içindeki `leadpilot/engine.py` niyet kuralları;
+`yorumpilot-source-manifest.jsonl` içindeki `backend/app/ai.py` yorum kuralları;
+Müşteri Avcısı `leadhunter/core.py` araştırma fonksiyonları taşındı.
+Özel müşteri verileri, tokenlar ve eski paketlerin bütün uygulama/veritabanları depoya taşınmadı.
+Eski LeadPilot widget/billing/MFA sistemi bu ortak arayüzle entegre edilmiş sayılmaz.
 
-30 Ekim kaynak kontrolü: LeadPilot AFK hesabı bağlantısıyla 404 döndü;
-YorumPilot deposu boş. Eski uygulamalar henüz taşınmadı. SiteNöbet canlı üretim
-kabulü bu belgeyle verilmez. Mevcut Müşteri Avcısı mail akışı değiştirilmez.
+## Aktivasyon sırası (henüz üretimde uygulanmadı)
 
-Doğrulama: `PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_lead_import.py -v`
-Dört sentetik test; gerçek mesaj yok, ücretli hizmet yok.
+1. Ana dal CI ve PostgreSQL migration testleri geçmeli.
+2. Hedef mevcut uygulamada yeni migration uygulanmalı ve ortak panel açılmalı.
+3. Sahip organization kimliği ve onaylı Telegram kanalı hedef DB'de mevcut olmalı.
+4. Kaynak `LEGACY_REVIEW_DATABASE_URL` ve hedef `DATABASE_URL` yalnızca özel ortama tanımlanmalı.
+5. `python -m app.history_import` çalıştırılmalı; aktarım sonuçları özel geçmişle karşılaştırılmalı.
+6. Eski Müşteri Avcısı mail workflow'u kapatılmalı. Tek gönderici kuralı korunmalı.
+7. Hedef repo Secrets: SITENOBET_DATABASE_URL, TELEGRAM_BOT_TOKEN, GMAIL_SENDER_ADDRESS, GMAIL_APP_PASSWORD.
+8. Variables: BUSINESS_ORGANIZATION_ID ve kontrol sonrası BUSINESS_HISTORY_RECONCILED=true,
+   LEGACY_MAIL_WORKFLOW_DISABLED=true, BUSINESS_AUTO_MAIL_ENABLED=true, BUSINESS_PIPELINE_ENABLED=true.
+9. İlk gerçek schedule ve Telegram tam metin makbuzları ayrı doğrulanmalı.
+
+`business-pipeline.yml` varsayılan kapalıdır; bu ayarlar mevcut olmadan müşteri maili göndermez.
+Slotlar hafta içi 10:23 / 11:53 TRT; GitHub gecikebilir veya atlayabilir. 24/7 garanti yoktur.
+SMTP kabulü gelen kutusuna teslim kanıtı değildir. Telegram outbox at-least-once'dır;
+API kabulünden sonra DB commit çökerse bildirim tekrarı mümkündür.
+Google resmi OAuth/işletme erişimi eski kaynakta da tamamlanmamıştır: gerçek Google
+senkronizasyonu/yayınlama hâlâ kapalıdır. Yorumlar API/panel ile içe alınabilir, ücretsiz
+taslak analizi çalışır. Bu sınıra rağmen tam Google otomasyonu iddia edilmez.

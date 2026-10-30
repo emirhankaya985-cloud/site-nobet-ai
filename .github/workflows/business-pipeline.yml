@@ -1,0 +1,40 @@
+name: IsletmePilot Unified Pipeline
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 7 * * 1-5'
+    - cron: '53 8 * * 1-5'
+permissions:
+  contents: read
+concurrency:
+  group: isletmepilot-unified-pipeline
+  cancel-in-progress: false
+jobs:
+  pipeline:
+    if: vars.BUSINESS_PIPELINE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -e .
+      - name: Run bounded unified pipeline
+        run: python -m app.business_pipeline
+        env:
+          APP_ENV: production
+          APP_ROLE: worker
+          SCHEDULER_MODE: cron
+          DATABASE_URL: ${{ secrets.SITENOBET_DATABASE_URL }}
+          BUSINESS_PIPELINE_ENABLED: ${{ vars.BUSINESS_PIPELINE_ENABLED }}
+          BUSINESS_AUTO_MAIL_ENABLED: ${{ vars.BUSINESS_AUTO_MAIL_ENABLED }}
+          BUSINESS_HISTORY_RECONCILED: ${{ vars.BUSINESS_HISTORY_RECONCILED }}
+          LEGACY_MAIL_WORKFLOW_DISABLED: ${{ vars.LEGACY_MAIL_WORKFLOW_DISABLED }}
+          BUSINESS_ORGANIZATION_ID: ${{ vars.BUSINESS_ORGANIZATION_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GMAIL_SENDER_ADDRESS: ${{ secrets.GMAIL_SENDER_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
