@@ -5,7 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
-from .business import import_lead, ImportLead
+from .business import import_lead, ImportLead, event
 from .business_mail import run_once as mail_once
 from .database import session_factory
 from .models import Membership, User, BusinessBatch
@@ -72,6 +72,9 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
             batch.state='mail_started'
             db.commit()
         counts.update(mailer(factory,env))
+        with factory() as db:
+            event(db,org,batch_id+'-summary','İşletmePilot — Günlük tarama özeti\n'+', '.join(f'{key}={value}' for key,value in counts.items())+'\nSMTP kabulü gelen kutusu teslimi değildir.')
+            db.commit()
         await drain(factory)
         await monitor(max_checks=3,max_notifications=50)
         with factory() as db:
