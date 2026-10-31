@@ -12,7 +12,8 @@ async def test_research_import_mail_monitor_chain_is_idempotent(database,two_use
         db.add(NotificationChannel(organization_id=org,kind='telegram',destination='123',confirmed=True))
         db.commit()
     env={'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true',
-         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_ORGANIZATION_ID':org}
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_ORGANIZATION_ID':org,
+         'BUSINESS_AUTO_MAIL_ENABLED':'true'}
     rows=[{'type':'node','id':1,'tags':{'name':'Synthetic','shop':'beauty','email':'info@example.invalid'}}]
     calls=[]
     def mailer(factory, _):
@@ -39,7 +40,8 @@ async def test_activation_requires_legacy_sender_disabled():
 async def test_successful_daily_batch_blocks_second_mail_stage(database,two_users):
     org=two_users[0]['organization_id']
     env={'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true',
-         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_ORGANIZATION_ID':org}
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_ORGANIZATION_ID':org,
+         'BUSINESS_AUTO_MAIL_ENABLED':'true'}
     from unittest.mock import patch
     calls=[]
     def mailer(*_):
