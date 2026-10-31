@@ -110,7 +110,7 @@ async def deliver_one(db: Session, now: datetime | None = None) -> bool:
         else:
             locked.status = "sent"
             locked.sent_at = utcnow()
-            if channel.kind == "telegram" and receipt_ids is not None:
+            if channel is not None and channel.kind == "telegram" and receipt_ids is not None:
                 locked.telegram_receipt_ids = json.dumps(receipt_ids)
         locked.leased_until = None
         db.commit()
