@@ -33,7 +33,7 @@ async def test_research_import_mail_monitor_chain_is_idempotent(database,two_use
 @pytest.mark.asyncio
 async def test_activation_requires_legacy_sender_disabled():
     with pytest.raises(RuntimeError,match='legacy'):
-        await run({'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true'})
+        await run({'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true','BUSINESS_AUTO_MAIL_ENABLED':'true'})
 
 
 @pytest.mark.asyncio
