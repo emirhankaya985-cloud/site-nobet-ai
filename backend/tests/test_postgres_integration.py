@@ -237,3 +237,106 @@ def test_postgres_parallel_send_limit_remains_five():
     with session_factory()() as db:
         assert len(db.scalars(select(MailClaim).where(MailClaim.organization_id==oid)).all())==5
     assert len(calls)==5
+
+
+def test_postgres_concurrent_owner_telegram_confirm_once(monkeypatch):
+    """Real PG row locking: only one browser confirmation can create a channel."""
+    from app import main
+    from types import SimpleNamespace
+    from uuid import uuid4
+    monkeypatch.setattr(main, 'get_settings', lambda: SimpleNamespace(
+        telegram_bot_token='synthetic', telegram_webhook_secret='pg-CI-webhook-secret'))
+    with TestClient(app) as client:
+        payload={'email':f'owner-{uuid4().hex}@example.invalid',
+                 'password':'very-strong-CI-password', 'organization_name':'Owner PG CI'}
+        issued=client.post('/auth/register',json=payload)
+        assert issued.status_code==201
+        credentials=issued.json()
+        org=credentials['organization_id']
+        headers={'Authorization':'Bearer '+credentials['access_token']}
+        base=f'/organizations/{org}/notifications/telegram'
+        response=client.post(base+'/link-code',headers=headers)
+        assert response.status_code==200,response.text
+        link=response.json()
+        webhook=client.post('/integrations/telegram/webhook',
+            headers={'X-Telegram-Bot-Api-Secret-Token':'pg-CI-webhook-secret'},
+            json={'message':{'text':'/start '+link['code'],
+                  'chat':{'id':456123,'type':'private'},
+                  'from':{'id':456123,'is_bot':False}}})
+        assert webhook.status_code==200
+        path=base+'/confirm/'+link['id']
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses=list(pool.map(lambda _: client.post(path,headers=headers).status_code,range(2)))
+        assert sorted(responses)==[200,409]
+    with session_factory()() as db:
+        channels=db.scalars(select(NotificationChannel).where(
+            NotificationChannel.organization_id==org,
+            NotificationChannel.kind=='telegram')).all()
+        assert len(channels)==1 and channels[0].confirmed
+        assert channels[0].destination=='456123'
+
+
+@pytest.mark.asyncio
+async def test_postgres_disabled_mail_never_claims_daily_batch():
+    from app.business_pipeline import run
+    from app.models import BusinessBatch, MailClaim
+    with session_factory()() as db:
+        org=Organization(name='Disabled mail PG CI')
+        db.add(org)
+        db.commit()
+        org_id=org.id
+    env={'BUSINESS_PIPELINE_ENABLED':'true', 'BUSINESS_HISTORY_RECONCILED':'true',
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true', 'BUSINESS_AUTO_MAIL_ENABLED':'false',
+         'BUSINESS_ORGANIZATION_ID':org_id}
+    def forbidden(*_a,**_kw):
+        raise AssertionError('Research/mail/database side effect must be impossible')
+    async def invoke():
+        with pytest.raises(RuntimeError,match='mail disabled'):
+            await run(env=env,factory=forbidden,researcher=forbidden,mailer=forbidden,
+                      monitor=forbidden)
+    await invoke()
+    await invoke()
+    with session_factory()() as db:
+        assert db.scalars(select(BusinessBatch).where(BusinessBatch.organization_id==org_id)).all()==[]
+        assert db.scalars(select(MailClaim).where(MailClaim.organization_id==org_id)).all()==[]
+
+
+@pytest.mark.asyncio
+async def test_postgres_mail_crash_preserves_claim_and_daily_barrier():
+    """No actual SMTP; a persisted in-flight claim must bar automatic retry."""
+    from app.business_pipeline import run
+    from app.models import BusinessBatch, BusinessLead, MailClaim
+    from unittest.mock import AsyncMock
+    with session_factory()() as db:
+        org=Organization(name='Crash before SMTP acknowledgement PG CI')
+        db.add(org)
+        db.flush()
+        oid=org.id
+        lead=BusinessLead(organization_id=oid,source_id='node/CI-claim',name='Synthetic',
+            email='pg-uncertain@example.invalid',email_source='synthetic',
+            delivery_state='not_sent')
+        db.add(lead)
+        db.commit()
+        lid=lead.id
+    env={'BUSINESS_PIPELINE_ENABLED':'true', 'BUSINESS_HISTORY_RECONCILED':'true',
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true', 'BUSINESS_AUTO_MAIL_ENABLED':'true',
+         'BUSINESS_ORGANIZATION_ID':oid}
+    def interrupted(factory,_env):
+        with factory() as db:
+            lead=db.get(BusinessLead,lid)
+            lead.delivery_state='sending'
+            db.add(MailClaim(organization_id=oid,lead_id=lid,
+                recipient=lead.email,subject='Synthetic',body='Synthetic',
+                state='sending'))
+            db.commit()
+        raise RuntimeError('Simulated process crash after claim, before SMTP status')
+    with pytest.raises(RuntimeError,match='Simulated process crash'):
+        await run(env=env,factory=session_factory(),researcher=lambda _:[],
+                  mailer=interrupted,monitor=AsyncMock())
+    with session_factory()() as db:
+        batch=db.scalars(select(BusinessBatch).where(BusinessBatch.organization_id==oid)).one()
+        assert batch.state=='running'
+        assert db.scalars(select(MailClaim).where(MailClaim.organization_id==oid)).one().state=='sending'
+    result=await run(env=env,factory=session_factory(),researcher=lambda _: pytest.fail('retry'),
+                     mailer=lambda *_:pytest.fail('SMTP retry'),monitor=AsyncMock())
+    assert result['skipped_existing_daily_batch']==1
