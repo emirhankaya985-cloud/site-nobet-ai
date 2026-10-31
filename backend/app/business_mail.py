@@ -6,7 +6,7 @@ import ssl
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from email.message import EmailMessage
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError
 from .models import BusinessLead, MailClaim, NotificationChannel, utcnow
 from .business import event
@@ -58,6 +58,11 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
     tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time(), ZoneInfo('Europe/Istanbul')).astimezone(timezone.utc)
     for _ in range(min(maximum,5)):
         with factory() as db:
+            # Serialize quota checks and inserts across independent PostgreSQL runners.
+            # This transaction-level advisory lock releases on commit, before SMTP.
+            if db.bind.dialect.name == 'postgresql':
+                db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:org))"),
+                           {'org': 'isletmepilot:mail:' + organization})
             used = db.scalar(select(func.count(MailClaim.id)).where(
                 MailClaim.organization_id == organization,
                 MailClaim.created_at >= midnight, MailClaim.created_at < tomorrow)) or 0
