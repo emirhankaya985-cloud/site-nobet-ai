@@ -32,7 +32,12 @@ def upgrade():
 
 def downgrade():
     # Only new owner-bound link metadata; existing CRM, channels and mail claims untouched.
-    op.drop_constraint("fk_telegram_link_codes_initiated_by_user_id", "telegram_link_codes", type_="foreignkey")
-    op.drop_index("ix_telegram_link_codes_initiated_by_user_id", table_name="telegram_link_codes")
+    inspector = sa.inspect(op.get_bind())
+    for key in inspector.get_foreign_keys("telegram_link_codes"):
+        if key.get("constrained_columns") == ["initiated_by_user_id"] and key.get("name"):
+            op.drop_constraint(key["name"], "telegram_link_codes", type_="foreignkey")
+    if any(index["name"] == "ix_telegram_link_codes_initiated_by_user_id"
+           for index in inspector.get_indexes("telegram_link_codes")):
+        op.drop_index("ix_telegram_link_codes_initiated_by_user_id", table_name="telegram_link_codes")
     for col in ("confirmed_at", "pending_telegram_user_id", "pending_chat_id", "initiated_by_user_id"):
         op.drop_column("telegram_link_codes", col)
