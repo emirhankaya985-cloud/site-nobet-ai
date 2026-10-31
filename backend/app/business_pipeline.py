@@ -8,7 +8,7 @@ from sqlalchemy import select
 from .business import import_lead, ImportLead, event
 from .business_mail import run_once as mail_once
 from .database import session_factory
-from .models import Membership, User, BusinessBatch
+from .models import Membership, User, BusinessBatch, MailClaim
 from .notifications import deliver_one
 from .research import get_osm, lead_from_osm, bbox_parse, DEFAULT_BBOX
 from .worker import run_once as monitor_once
@@ -25,6 +25,10 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
     env = os.environ if env is None else env
     if env.get('BUSINESS_PIPELINE_ENABLED') != 'true':
         raise RuntimeError('Unified pipeline disabled')
+    # Explicit fail-closed mode: do not research, import, drain notifications, or
+    # create a daily batch when SMTP is disabled. No pretend mail-free run.
+    if env.get('BUSINESS_AUTO_MAIL_ENABLED') != 'true':
+        raise RuntimeError('Unified mail disabled; no daily batch or side effects created')
     if env.get('BUSINESS_HISTORY_RECONCILED') != 'true' or env.get('LEGACY_MAIL_WORKFLOW_DISABLED') != 'true':
         raise RuntimeError('Reconcile history and disable legacy sender before unified activation')
     org = env.get('BUSINESS_ORGANIZATION_ID')
@@ -67,11 +71,14 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
                     if exc.status_code!=422:
                         raise
                     counts['invalid']+=1
+        # MailClaim is durably committed inside mailer before any real SMTP call.
+        # Mark this stage only after the mailer has returned; a preflight failure
+        # must never masquerade as a started SMTP attempt.
+        counts.update(mailer(factory,env))
         with factory() as db:
             batch=db.get(BusinessBatch,batch_id)
             batch.state='mail_started'
             db.commit()
-        counts.update(mailer(factory,env))
         with factory() as db:
             event(db,org,batch_id+'-summary','İşletmePilot — Günlük tarama özeti\n'+', '.join(f'{key}={value}' for key,value in counts.items())+'\nSMTP kabulü gelen kutusu teslimi değildir.')
             db.commit()
@@ -88,9 +95,17 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
     except Exception:
         with factory() as db:
             batch=db.get(BusinessBatch,batch_id)
-            if batch and batch.state=='running':
-                db.delete(batch)  # No SMTP was attempted; the backup may retry research.
-                db.commit()
+            if batch and batch.state in ('running', 'mail_started'):
+                # If the sender crashed after persisting a claim, retain the
+                # daily barrier. Sending or uncertain claims must never be erased.
+                today = datetime.now(ZoneInfo('Europe/Istanbul')).date()
+                cutoff = datetime.combine(today, datetime.min.time(), ZoneInfo('Europe/Istanbul'))
+                claim = db.scalar(select(MailClaim.id).where(
+                    MailClaim.organization_id == org,
+                    MailClaim.created_at >= cutoff).limit(1))
+                if claim is None:
+                    db.delete(batch)  # No mail attempt was persisted.
+                    db.commit()
         raise
 
 

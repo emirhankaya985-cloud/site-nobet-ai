@@ -100,6 +100,10 @@ class TelegramLinkCode(Base):
     code_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     redeemed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    initiated_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    pending_chat_id: Mapped[str | None] = mapped_column(String(255))
+    pending_telegram_user_id: Mapped[str | None] = mapped_column(String(255))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class NotificationDelivery(Base):
