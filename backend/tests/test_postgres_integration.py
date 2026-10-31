@@ -260,12 +260,18 @@ def test_postgres_concurrent_owner_telegram_confirm_once(monkeypatch):
         response=client.post(base+'/link-code',headers=headers)
         assert response.status_code==200,response.text
         link=response.json()
-        webhook=client.post('/integrations/telegram/webhook',
-            headers={'X-Telegram-Bot-Api-Secret-Token':'pg-CI-webhook-secret'},
-            json={'message':{'text':'/start '+link['code'],
-                  'chat':{'id':456123,'type':'private'},
-                  'from':{'id':456123,'is_bot':False}}})
-        assert webhook.status_code==200
+        def redeem(chat_id):
+            return client.post('/integrations/telegram/webhook',
+                headers={'X-Telegram-Bot-Api-Secret-Token':'pg-CI-webhook-secret'},
+                json={'message':{'text':'/start '+link['code'],
+                      'chat':{'id':chat_id,'type':'private'},
+                      'from':{'id':chat_id,'is_bot':False}}}).status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert list(pool.map(redeem,[456123,456124]))==[200,200]
+        status=client.get(base+'/link-status/'+link['id'],headers=headers).json()
+        assert status['state']=='pending_confirmation'
+        assert status['telegram_user_id'] in ('456123','456124')
+        chosen_chat=status['telegram_user_id']
         path=base+'/confirm/'+link['id']
         with ThreadPoolExecutor(max_workers=2) as pool:
             responses=list(pool.map(lambda _: client.post(path,headers=headers).status_code,range(2)))
@@ -275,7 +281,7 @@ def test_postgres_concurrent_owner_telegram_confirm_once(monkeypatch):
             NotificationChannel.organization_id==org,
             NotificationChannel.kind=='telegram')).all()
         assert len(channels)==1 and channels[0].confirmed
-        assert channels[0].destination=='456123'
+        assert channels[0].destination==chosen_chat
 
 
 @pytest.mark.asyncio
