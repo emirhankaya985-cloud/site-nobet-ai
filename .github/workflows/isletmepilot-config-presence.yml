@@ -1,0 +1,47 @@
+name: IsletmePilot Configuration Presence Audit
+on:
+  push:
+    branches: ['test/isletmepilot-readonly-acceptance-20261031']
+    paths: ['.github/workflows/isletmepilot-config-presence.yml']
+permissions:
+  contents: read
+jobs:
+  names-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check safe presence and literal activation states; no secret values
+        env:
+          S_DB: ${{ secrets.SITENOBET_DATABASE_URL }}
+          S_BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          S_MONITOR_BOT: ${{ secrets.SITENOBET_TELEGRAM_BOT_TOKEN }}
+          S_SENDER: ${{ secrets.GMAIL_SENDER_ADDRESS }}
+          S_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          V_ORG: ${{ vars.BUSINESS_ORGANIZATION_ID }}
+          V_AUTO_MAIL: ${{ vars.BUSINESS_AUTO_MAIL_ENABLED }}
+          V_LEGACY_DISABLED: ${{ vars.LEGACY_MAIL_WORKFLOW_DISABLED }}
+          V_HISTORY: ${{ vars.BUSINESS_HISTORY_RECONCILED }}
+          V_PIPELINE: ${{ vars.BUSINESS_PIPELINE_ENABLED }}
+        run: |
+          python - <<'PY'
+          import os
+          for label, key in (
+            ("SITENOBET_DATABASE_URL","S_DB"),
+            ("TELEGRAM_BOT_TOKEN","S_BOT"),
+            ("SITENOBET_TELEGRAM_BOT_TOKEN","S_MONITOR_BOT"),
+            ("GMAIL_SENDER_ADDRESS","S_SENDER"),
+            ("GMAIL_APP_PASSWORD","S_PASSWORD"),
+          ):
+              print("CONFIG_CHECK", label, "provided_to_this_workflow="+str(bool(os.getenv(key))).lower())
+          org=os.getenv("V_ORG","")
+          print("CONFIG_CHECK BUSINESS_ORGANIZATION_ID provided="+str(bool(org)).lower())
+          print("CONFIG_CHECK BUSINESS_ORGANIZATION_ID matches_current_owner="+str(org=="3366e0b0-81ec-4e98-bcfe-4ecda58f33ec").lower())
+          for label,key in (
+            ("BUSINESS_AUTO_MAIL_ENABLED","V_AUTO_MAIL"),
+            ("LEGACY_MAIL_WORKFLOW_DISABLED","V_LEGACY_DISABLED"),
+            ("BUSINESS_HISTORY_RECONCILED","V_HISTORY"),
+            ("BUSINESS_PIPELINE_ENABLED","V_PIPELINE"),
+          ):
+              value=os.getenv(key, "")
+              print("CONFIG_CHECK",label,"provided="+str(bool(value)).lower(),"literal_true="+str(value=="true").lower(),"literal_false="+str(value=="false").lower())
+          PY
