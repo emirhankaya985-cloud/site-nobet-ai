@@ -50,3 +50,24 @@ async def test_successful_daily_batch_blocks_second_mail_stage(database,two_user
         result=await run(env,database,lambda _:pytest.fail('second scan'),mailer,AsyncMock())
     assert result['skipped_existing_daily_batch']==1
     assert len(calls)==1
+
+
+@pytest.mark.asyncio
+async def test_disabled_mail_never_leaves_a_daily_batch_or_imports(database, two_users):
+    """Regression: old code recorded mail_started before raising and blocked the day."""
+    from sqlalchemy import func
+    from app.models import BusinessBatch
+    org = two_users[0]['organization_id']
+    env = {'BUSINESS_PIPELINE_ENABLED':'true', 'BUSINESS_HISTORY_RECONCILED':'true',
+           'LEGACY_MAIL_WORKFLOW_DISABLED':'true', 'BUSINESS_AUTO_MAIL_ENABLED':'false',
+           'BUSINESS_ORGANIZATION_ID':org}
+    calls = []
+    def forbidden(*_args, **_kwargs):
+        calls.append(1)
+        raise RuntimeError('mail disabled')
+    with pytest.raises(RuntimeError, match='mail disabled'):
+        await run(env=env, factory=database, researcher=lambda _: [], mailer=forbidden, monitor=AsyncMock())
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(BusinessBatch)) == 0
+        assert db.scalar(select(func.count()).select_from(BusinessLead)) == 0
+    assert not calls, 'Disabled mail must fail before any mailer invocation'
