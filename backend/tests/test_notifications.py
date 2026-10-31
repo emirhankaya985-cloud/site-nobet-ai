@@ -164,3 +164,44 @@ async def test_late_failing_sender_does_not_increment_successor_attempts(databas
         assert row.status == "pending"
         assert row.attempts == 0
         assert row.leased_until.replace(tzinfo=__import__('datetime').timezone.utc) > utcnow()
+
+
+@pytest.mark.asyncio
+async def test_long_telegram_report_is_chunked_and_receipts_persist(database,monkeypatch):
+    import httpx
+    import json
+    from types import SimpleNamespace
+    from sqlalchemy import select
+    from app import notifications
+    calls = []
+
+    def respond(request):
+        payload=json.loads(request.content)
+        calls.append(payload['text'])
+        return httpx.Response(200,json={'ok':True,'result':{'message_id':100+len(calls)}})
+
+    real_client=httpx.AsyncClient
+    monkeypatch.setattr(notifications.httpx,'AsyncClient',lambda **kwargs:real_client(
+        transport=httpx.MockTransport(respond),timeout=kwargs.get('timeout',8)))
+    monkeypatch.setattr(notifications,'get_settings',lambda:SimpleNamespace(
+        telegram_bot_token='ci-fake-token',ntfy_base_url='https://ntfy.invalid'))
+    original='Full report: '+('long synthetic body ' * 300)
+    with database() as db:
+        org=Organization(name='Synthetic owner')
+        db.add(org)
+        db.flush()
+        channel=NotificationChannel(organization_id=org.id,kind='telegram',destination='12345',confirmed=True)
+        db.add(channel)
+        db.flush()
+        delivery=NotificationDelivery(channel_id=channel.id,event_key='synthetic:long-report',message=original)
+        db.add(delivery)
+        db.commit()
+        delivery_id=delivery.id
+    with database() as db:
+        assert await deliver_one(db)
+        record=db.get(NotificationDelivery,delivery_id)
+        assert record.status=='sent'
+        assert len(calls)>1
+        assert all(len(piece)<=4096 for piece in calls)
+        assert ''.join(piece.split('\\n',1)[1] for piece in calls)==original
+        assert json.loads(record.telegram_receipt_ids)==list(range(101,101+len(calls)))
