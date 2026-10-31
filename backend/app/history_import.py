@@ -50,8 +50,10 @@ def run(env=None, factory=None):
                                                          BusinessLead.source_id==record.source_id))
             if existing:
                 # Never discard evidence of an earlier send when a new draft exists.
-                if record.delivery_state in ('accepted','sending','uncertain','rejected','deferred'):
-                    existing.delivery_state=record.delivery_state
+                frozen = ('accepted', 'sending', 'uncertain', 'rejected', 'deferred')
+                # Never downgrade a prior send or explicit owner decision.
+                if existing.delivery_state not in frozen and record.delivery_state in frozen:
+                    existing.delivery_state = record.delivery_state
                 continue
             db.add(BusinessLead(organization_id=org,source_id=record.source_id,name=record.name,
                 email=record.email,email_source=record.email_source,website=record.website,
