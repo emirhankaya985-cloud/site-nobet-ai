@@ -55,7 +55,7 @@ def claim_delivery(db: Session, now: datetime | None = None) -> NotificationDeli
     now = now or utcnow()
     row = db.scalar(select(NotificationDelivery).where(NotificationDelivery.status == "pending", NotificationDelivery.next_attempt_at <= now, or_(NotificationDelivery.leased_until.is_(None), NotificationDelivery.leased_until < now)).order_by(NotificationDelivery.next_attempt_at).limit(1).with_for_update(skip_locked=True))
     if row:
-        row.leased_until = now + timedelta(seconds=30)
+        row.leased_until = now + timedelta(seconds=max(60, 30 + 12 * ((len(row.message) + 3399) // 3400)))
         db.commit()
     return row
 
