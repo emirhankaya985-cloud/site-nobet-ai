@@ -1,0 +1,46 @@
+name: Telegram Read-Only Bot Identity Probe
+on:
+  push:
+    branches: ['test/isletmepilot-readonly-acceptance-20261031']
+    paths: ['.github/workflows/telegram-readonly-identity.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Compare safe public bot identity fingerprint and webhook enabled state
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          from urllib.request import urlopen
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+          if not token:
+              print("BOT_PROBE: credential_present=false; identity and webhook unknown")
+              sys.exit(0)
+          try:
+              base = "https://api.telegram.org/bot" + token + "/"
+              with urlopen(base + "getMe", timeout=12) as res:
+                  me = json.load(res)
+              with urlopen(base + "getWebhookInfo", timeout=12) as res:
+                  hook = json.load(res)
+              if me.get("ok") is not True or hook.get("ok") is not True:
+                  raise ValueError("Telegram API reported failure")
+              bot = me.get("result", {})
+              info = hook.get("result", {})
+              if type(bot.get("id")) is not int or bot.get("is_bot") is not True:
+                  raise ValueError("Invalid bot identity")
+              print("BOT_PROBE: credential_present=true")
+              print("BOT_PROBE: identity_sha256_prefix=" + hashlib.sha256(("Telegram-bot-id:" + str(bot["id"])).encode()).hexdigest()[:24])
+              print("BOT_PROBE: webhook_active=" + str(bool(info.get("url"))).lower())
+              print("BOT_PROBE: no webhook URL, bot token, owner chat, or update payload logged")
+          except Exception as exc:
+              print("BOT_PROBE: unverified; failure_type=" + type(exc).__name__)
+              sys.exit(1)
+          PY
