@@ -9,7 +9,7 @@ from .database import db_session
 from .lead_import import parse_import
 from .review_analysis import RuleBasedProvider
 from .leadpilot_intent import rule_intent
-from .models import BusinessLead, ReviewDraft, User, NotificationChannel, NotificationDelivery, Monitor, MailClaim
+from .models import BusinessLead, ReviewDraft, User, NotificationChannel, NotificationDelivery, Monitor, MailClaim, BusinessBatch
 
 router = APIRouter(prefix='/organizations/{org_id}/business', tags=['İşletmePilot'])
 
@@ -127,7 +127,8 @@ def summary(org_id: str, user: User = Depends(current_user), db: Session = Depen
     mail_claims = count(MailClaim)
     # API cannot inspect GitHub Actions variables/secrets: never imply live send readiness.
     return {'leads':count(BusinessLead),'review_drafts':count(ReviewDraft),'monitors':count(Monitor),
-            'mail_claims':mail_claims, 'telegram_confirmed':bool(confirmed_telegram),
+            'mail_claims':mail_claims, 'business_batches':count(BusinessBatch),
+            'telegram_confirmed':bool(confirmed_telegram),
             'google_connected':False,'autonomous_mail_connected':False}
 
 
