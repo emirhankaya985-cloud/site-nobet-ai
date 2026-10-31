@@ -13,7 +13,7 @@ def telegram_parts(message: str, size: int = 3400) -> list[str]:
     parts = [message[i:i + size] for i in range(0, len(message), size)] or ['']
     if len(parts) == 1:
         return parts
-    return [f'Bölüm {index}/{len(parts)}\\n' + part for index, part in enumerate(parts, 1)]
+    return [f'Bölüm {index}/{len(parts)}\n' + part for index, part in enumerate(parts, 1)]
 
 
 async def send_delivery(channel: NotificationChannel, message: str) -> list[int] | None:
