@@ -95,7 +95,7 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
     except Exception:
         with factory() as db:
             batch=db.get(BusinessBatch,batch_id)
-            if batch and batch.state=='running':
+            if batch and batch.state in ('running', 'mail_started'):
                 # If the sender crashed after persisting a claim, retain the
                 # daily barrier. Sending or uncertain claims must never be erased.
                 today = datetime.now(ZoneInfo('Europe/Istanbul')).date()
