@@ -244,7 +244,9 @@ def test_postgres_concurrent_owner_telegram_confirm_once(monkeypatch):
     from app import main
     from types import SimpleNamespace
     from uuid import uuid4
+    real_session_secret = main.get_settings().session_secret
     monkeypatch.setattr(main, 'get_settings', lambda: SimpleNamespace(
+        session_secret=real_session_secret,
         telegram_bot_token='synthetic', telegram_webhook_secret='pg-CI-webhook-secret'))
     with TestClient(app) as client:
         payload={'email':f'owner-{uuid4().hex}@example.invalid',
