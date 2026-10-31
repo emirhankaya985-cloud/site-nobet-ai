@@ -171,7 +171,6 @@ async def test_long_telegram_report_is_chunked_and_receipts_persist(database,mon
     import httpx
     import json
     from types import SimpleNamespace
-    from sqlalchemy import select
     from app import notifications
     calls = []
 
@@ -203,5 +202,5 @@ async def test_long_telegram_report_is_chunked_and_receipts_persist(database,mon
         assert record.status=='sent'
         assert len(calls)>1
         assert all(len(piece)<=4096 for piece in calls)
-        assert ''.join(piece.split('\\n',1)[1] for piece in calls)==original
+        assert ''.join(piece.split('\n',1)[1] for piece in calls)==original
         assert json.loads(record.telegram_receipt_ids)==list(range(101,101+len(calls)))
