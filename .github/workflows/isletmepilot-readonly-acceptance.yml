@@ -1,0 +1,70 @@
+name: IsletmePilot Read-Only HTTP Acceptance
+on:
+  push:
+    branches: [test/isletmepilot-readonly-acceptance-20261031]
+    paths: ['.github/workflows/isletmepilot-readonly-acceptance.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read-only-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Public HTTP and database-backed health check (GET only)
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+          from urllib.error import HTTPError, URLError
+          targets = {
+              'api_health': 'https://sitenobet-api-free.onrender.com/health',
+              'business_shell': 'https://sitenobet-web-free.onrender.com/business',
+              'login_shell': 'https://sitenobet-web-free.onrender.com/login',
+          }
+          for label, url in targets.items():
+              for attempt in range(1, 5):
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'SiteNobet-readonly-acceptance/1.0'}), timeout=30) as resp:
+                          data = resp.read(512000).decode('utf-8', 'replace')
+                          status = resp.status
+                      assert status == 200, (label, status)
+                      if label == 'api_health':
+                          health = json.loads(data)
+                          assert health.get('status') == 'ok' and health.get('database') == 'ok', 'Health missing DB readiness'
+                      else:
+                          assert '<html' in data.lower() and ('/_next/' in data or '__next' in data), 'Next.js HTML shell unavailable'
+                      print('PASS', label, 'HTTP', status, 'body validated', flush=True)
+                      break
+                  except (HTTPError, URLError, TimeoutError, AssertionError, ValueError) as exc:
+                      print('RETRY', label, attempt, type(exc).__name__, flush=True)
+                      if attempt == 4: raise
+                      time.sleep(8)
+          print('Authenticated owner business data NOT tested; requires private owner session', flush=True)
+          PY
+      - name: Prove unified pipeline refuses unsafe flags without database or SMTP (isolated)
+        run: |
+          python -m pip install --disable-pip-version-check -e ./backend
+          PYTHONPATH=backend python - <<'PY'
+          import asyncio
+          from app.business_pipeline import run
+          def forbidden(*args, **kwargs):
+              raise AssertionError('Unexpected database, research, SMTP or notification side effect')
+          async def check(env):
+              try:
+                  await run(env=env, factory=forbidden, researcher=forbidden, mailer=forbidden, monitor=forbidden)
+              except RuntimeError as exc:
+                  assert 'disabled' in str(exc).lower() or 'reconcile' in str(exc).lower(), type(exc).__name__
+              else:
+                  raise AssertionError('Unsafe pipeline was not refused')
+          asyncio.run(check({'BUSINESS_PIPELINE_ENABLED': 'false', 'BUSINESS_AUTO_MAIL_ENABLED': 'false'}))
+          asyncio.run(check({'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_HISTORY_RECONCILED': 'false', 'LEGACY_MAIL_WORKFLOW_DISABLED': 'false', 'BUSINESS_AUTO_MAIL_ENABLED': 'false'}))
+          print('PASS: disabled and unreconciled pipelines refused before any database, SMTP, or external call')
+          PY
