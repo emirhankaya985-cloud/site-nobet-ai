@@ -23,8 +23,9 @@ def upgrade():
     if "ix_telegram_link_codes_initiated_by_user_id" not in indexes:
         op.create_index("ix_telegram_link_codes_initiated_by_user_id", "telegram_link_codes",
                         ["initiated_by_user_id"])
-    foreign_keys = {c["name"] for c in inspector.get_foreign_keys("telegram_link_codes")}
-    if "fk_telegram_link_codes_initiated_by_user_id" not in foreign_keys:
+    foreign_keys = inspector.get_foreign_keys("telegram_link_codes")
+    if not any(key.get("constrained_columns") == ["initiated_by_user_id"] and
+               key.get("referred_table") == "users" for key in foreign_keys):
         op.create_foreign_key("fk_telegram_link_codes_initiated_by_user_id", "telegram_link_codes",
                               "users", ["initiated_by_user_id"], ["id"])
 
