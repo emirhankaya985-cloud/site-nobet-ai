@@ -305,13 +305,18 @@ async def test_postgres_disabled_mail_never_claims_daily_batch():
 async def test_postgres_mail_crash_preserves_claim_and_daily_barrier():
     """No actual SMTP; a persisted in-flight claim must bar automatic retry."""
     from app.business_pipeline import run
-    from app.models import BusinessBatch, BusinessLead, MailClaim
-    from unittest.mock import AsyncMock
+    from app.models import BusinessBatch, BusinessLead, MailClaim, Membership, User
+    from unittest.mock import AsyncMock, patch
+    from uuid import uuid4
     with session_factory()() as db:
         org=Organization(name='Crash before SMTP acknowledgement PG CI')
         db.add(org)
         db.flush()
         oid=org.id
+        owner=User(email=f'crash-{uuid4().hex}@example.invalid',password_hash='synthetic-not-for-login')
+        db.add(owner)
+        db.flush()
+        db.add(Membership(organization_id=oid,user_id=owner.id,role='owner'))
         lead=BusinessLead(organization_id=oid,source_id='node/CI-claim',name='Synthetic',
             email='pg-uncertain@example.invalid',email_source='synthetic',
             delivery_state='not_sent')
@@ -330,13 +335,15 @@ async def test_postgres_mail_crash_preserves_claim_and_daily_barrier():
                 state='sending'))
             db.commit()
         raise RuntimeError('Simulated process crash after claim, before SMTP status')
-    with pytest.raises(RuntimeError,match='Simulated process crash'):
-        await run(env=env,factory=session_factory(),researcher=lambda _:[],
-                  mailer=interrupted,monitor=AsyncMock())
+    with patch('app.business_pipeline.drain', new_callable=AsyncMock):
+        with pytest.raises(RuntimeError,match='Simulated process crash'):
+            await run(env=env,factory=session_factory(),researcher=lambda _:[],
+                      mailer=interrupted,monitor=AsyncMock())
     with session_factory()() as db:
         batch=db.scalars(select(BusinessBatch).where(BusinessBatch.organization_id==oid)).one()
         assert batch.state=='running'
         assert db.scalars(select(MailClaim).where(MailClaim.organization_id==oid)).one().state=='sending'
-    result=await run(env=env,factory=session_factory(),researcher=lambda _: pytest.fail('retry'),
-                     mailer=lambda *_:pytest.fail('SMTP retry'),monitor=AsyncMock())
+    with patch('app.business_pipeline.drain', new_callable=AsyncMock):
+        result=await run(env=env,factory=session_factory(),researcher=lambda _: pytest.fail('retry'),
+                         mailer=lambda *_:pytest.fail('SMTP retry'),monitor=AsyncMock())
     assert result['skipped_existing_daily_batch']==1
