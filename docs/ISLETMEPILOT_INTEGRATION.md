@@ -43,3 +43,27 @@ API kabulünden sonra DB commit çökerse bildirim tekrarı mümkündür.
 Google resmi OAuth/işletme erişimi eski kaynakta da tamamlanmamıştır: gerçek Google
 senkronizasyonu/yayınlama hâlâ kapalıdır. Yorumlar API/panel ile içe alınabilir, ücretsiz
 taslak analizi çalışır. Bu sınıra rağmen tam Google otomasyonu iddia edilmez.
+
+
+## 31 Ekim 2026 — güvenlik düzeltmesi ve geçiş koşulları
+
+- İki Neon veritabanı salt-okunur sorgularla karşılaştırıldı: kaynakta 35 ve hedefte 35 kayıt; 15 accepted ve 20 unknown. Kaynak ID listesi ile 15 eski mailin alıcı, konu ve tam gövde parmak izleri eşleşiyor. Yeni mail gönderilmedi.
+- Birleşik mail kodu artık kaynak workflow devre dışı onayı olmadan SMTP yapamaz. Gerçek geçiş kanıtı olmadan `LEGACY_MAIL_WORKFLOW_DISABLED=true` ayarlanmamalı.
+- Günlük en fazla 5 mail claim oluşturulur (Türkiye takvim günü); PostgreSQL transaction advisory lock paralel runner'ların kotayı aşmasını engeller. Gönderimden önce commit edilir. SMTP timeout durumları `uncertain` kalır, otomatik mail tekrarına dönüşmez.
+- Önceden aktarılmış mail geçmişi ve normalize edilmiş alıcı adresi ikinci gönderime engeldir. Import geçmişindeki `accepted`, `sending`, `uncertain`, `rejected` ve `deferred` durumları korunur.
+- Alıcı, konu ve tam mail metnini içeren bildirim sadece doğrulanmış Telegram kanalına yazılır, ntfy'ye gönderilmez.
+- Uzun Telegram raporları güvenli uzunlukta sıralı parçalara ayrılır. Her parça için `ok` ve pozitif `message_id` doğrulanır; hepsi başarıyla tamamlanınca mesaj ID'leri hedef DB'ye yazılır.
+- Telegram gönderiminin ortasında bağlantı koparsa rapor tekrarında bazı parçalar iki kez görülebilir. SMTP yeniden gönderilmez; API makbuzu okundu bilgisi değildir.
+- Panel DB'den Telegram doğrulama durumunu, CRM, mail geçmişi ve batch sayaçlarını gösterir. Gmail/Actions sırları API tarafından görülmediği için SMTP hazır durumunu doğrulandı gibi sunmaz.
+- YorumPilot'un Google OAuth/API erişimi hâlâ yok; manuel taslaklar gerçek Google senkronizasyonu değildir.
+
+### Kontrollü tek gönderici aktivasyonu (henüz gerçekleştirilmedi)
+
+1. Ana repo PR CI, PostgreSQL migration, frontend test ve prod dağıtımı doğrulansın.
+2. Hedef repo Actions Secrets ekranına kullanıcı mevcut Gmail + Telegram değerlerini doğrudan ve gizli şekilde girsin. Kayıtlı eski repo secret değerleri okunamaz.
+3. Panelden owner login ile 10 dakika geçerli Telegram bağlantı kodu oluşturulup sahibin **özel** sohbetinde doğrulansın. Başka sohbet kaynak geçmişinden tahmin edilmesin.
+4. Önceki depoda otomatik `lead-digest.yml`, manuel SMTP `execute-outreach.yml`, `verified-mail-batch.yml` ve Telegram butonundan SMTP üretebilen yol kontrol edilip tek göndericiye geçiş için engellensin. Yeni gönderici aynı anda açık olmasın.
+5. Yeniden salt-okunur kaynak-hedef karşılaştırması ve geri dönüş kopyası sonrası, yalnızca gerçek kanıtla HISTORY_RECONCILED ve LEGACY_MAIL_WORKFLOW_DISABLED bayrakları açılabilir.
+6. Yeni gerçek işletmelere SMTP gönderimi ancak ayrıca açık kullanıcı izniyle aktifleştirilsin. İlk gerçek schedule olayı, kalıcı claim ve Telegram receipt ID'leri ayrı ayrı kontrol edilsin.
+
+Bu belgedeki geliştirmeler ve CI testleri canlı otomasyon kanıtı değildir.

@@ -3,9 +3,10 @@ import os
 import re
 import smtplib
 import ssl
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from email.message import EmailMessage
-from sqlalchemy import select
+from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError
 from .models import BusinessLead, MailClaim, NotificationChannel, utcnow
 from .business import event
@@ -37,6 +38,8 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
         raise RuntimeError('Owner organization required')
     if env.get('BUSINESS_HISTORY_RECONCILED') != 'true':
         raise RuntimeError('Existing mail history must be reconciled before activation')
+    if env.get('LEGACY_MAIL_WORKFLOW_DISABLED') != 'true':
+        raise RuntimeError('Legacy sender must be disabled before unified mail activation')
     factory = factory or session_factory()
     with factory() as db:
         stale = db.scalars(select(MailClaim).where(MailClaim.organization_id==organization,
@@ -46,11 +49,27 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
             lead=db.get(BusinessLead,claim.lead_id)
             if lead:
                 lead.delivery_state='uncertain'
-            event(db,organization,claim.id,'İşletmePilot — Kesilen mail işlemi; sonuç belirsiz, otomatik tekrar kapalı.\nAlıcı: '+claim.recipient+'\nKonu: '+claim.subject+'\n\n'+claim.body)
+            event(db,organization,claim.id,'İşletmePilot — Kesilen mail işlemi; sonuç belirsiz, otomatik tekrar kapalı.\nAlıcı: '+claim.recipient+'\nKonu: '+claim.subject+'\n\n'+claim.body,telegram_only=True)
         db.commit()
-    result = {'accepted':0,'uncertain':0,'duplicate':0}
+    result = {'accepted':0,'uncertain':0,'duplicate':0,'daily_limit_reached':0}
+    # Day boundaries are calculated in Turkey, claims are compared as UTC timestamps.
+    today = datetime.now(ZoneInfo('Europe/Istanbul')).date()
+    midnight = datetime.combine(today, datetime.min.time(), ZoneInfo('Europe/Istanbul')).astimezone(timezone.utc)
+    tomorrow = datetime.combine(today + timedelta(days=1), datetime.min.time(), ZoneInfo('Europe/Istanbul')).astimezone(timezone.utc)
     for _ in range(min(maximum,5)):
         with factory() as db:
+            # Serialize quota checks and inserts across independent PostgreSQL runners.
+            # This transaction-level advisory lock releases on commit, before SMTP.
+            if db.get_bind().dialect.name == 'postgresql':
+                db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:org))"),
+                           {'org': 'isletmepilot:mail:' + organization})
+            used = db.scalar(select(func.count(MailClaim.id)).where(
+                MailClaim.organization_id == organization,
+                MailClaim.created_at >= midnight, MailClaim.created_at < tomorrow)) or 0
+            # Count uncertain and in-flight claims too: retries must not increase the quota.
+            if used >= 5:
+                result['daily_limit_reached'] = 1
+                break
             channel = db.scalar(select(NotificationChannel.id).where(
                 NotificationChannel.organization_id==organization,
                 NotificationChannel.kind=='telegram',NotificationChannel.confirmed.is_(True)))
@@ -65,10 +84,14 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
                 row.delivery_state='unknown'
                 db.commit()
                 continue
+            historic_claim = db.scalar(select(MailClaim.id).where(
+                MailClaim.organization_id == organization,
+                func.lower(func.trim(MailClaim.recipient)) == row.email).limit(1))
             prior = db.scalar(select(BusinessLead.id).where(
                 BusinessLead.organization_id==organization, BusinessLead.id!=row.id,
-                BusinessLead.email==row.email, BusinessLead.delivery_state.in_(['accepted','sending','uncertain','rejected','deferred'])).limit(1))
-            if prior:
+                func.lower(func.trim(BusinessLead.email))==row.email,
+                BusinessLead.delivery_state.in_(['accepted','sending','uncertain','rejected','deferred'])).limit(1))
+            if prior or historic_claim:
                 row.delivery_state='duplicate'
                 db.commit()
                 result['duplicate']+=1
@@ -98,7 +121,7 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
             row.delivery_state=state
             label='SMTP kabulü; gelen kutusu teslimi doğrulanmadı' if state=='accepted' else 'Sonuç belirsiz; otomatik tekrar kapalı'
             event(db,organization,claim.id,
-                f'İşletmePilot — Mail sonucu\n{label}\nAlıcı: {claim.recipient}\nKonu: {claim.subject}\n\n{claim.body}')
+                f'İşletmePilot — Mail sonucu\n{label}\nAlıcı: {claim.recipient}\nKonu: {claim.subject}\n\n{claim.body}',telegram_only=True)
             db.commit()
             result[state]+=1
     return result

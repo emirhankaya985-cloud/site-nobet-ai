@@ -9,7 +9,7 @@ from .database import db_session
 from .lead_import import parse_import
 from .review_analysis import RuleBasedProvider
 from .leadpilot_intent import rule_intent
-from .models import BusinessLead, ReviewDraft, User, NotificationChannel, NotificationDelivery, Monitor
+from .models import BusinessLead, ReviewDraft, User, NotificationChannel, NotificationDelivery, Monitor, MailClaim, BusinessBatch
 
 router = APIRouter(prefix='/organizations/{org_id}/business', tags=['İşletmePilot'])
 
@@ -31,10 +31,14 @@ class ImportReview(BaseModel):
     model_config = {'extra':'forbid'}
 
 
-def event(db, org_id, key, message):
-    # Only pre-confirmed channels belonging to this organization receive events.
-    channels = db.scalars(select(NotificationChannel).where(
-        NotificationChannel.organization_id == org_id, NotificationChannel.confirmed.is_(True))).all()
+def event(db, org_id, key, message, *, telegram_only=False):
+    # Full email text must never leak to ntfy or another non-private channel.
+    query = select(NotificationChannel).where(
+        NotificationChannel.organization_id == org_id,
+        NotificationChannel.confirmed.is_(True))
+    if telegram_only:
+        query = query.where(NotificationChannel.kind == 'telegram')
+    channels = db.scalars(query).all()
     for channel in channels:
         db.add(NotificationDelivery(channel_id=channel.id,
             event_key=f'business:{key}:{channel.id}', message=message))
@@ -117,7 +121,14 @@ def summary(org_id: str, user: User = Depends(current_user), db: Session = Depen
     org_membership(user,org_id,db)
     def count(model):
         return db.scalar(select(func.count()).select_from(model).where(model.organization_id == org_id))
+    confirmed_telegram = db.scalar(select(func.count(NotificationChannel.id)).where(
+        NotificationChannel.organization_id == org_id, NotificationChannel.kind == 'telegram',
+        NotificationChannel.confirmed.is_(True))) or 0
+    mail_claims = count(MailClaim)
+    # API cannot inspect GitHub Actions variables/secrets: never imply live send readiness.
     return {'leads':count(BusinessLead),'review_drafts':count(ReviewDraft),'monitors':count(Monitor),
+            'mail_claims':mail_claims, 'business_batches':count(BusinessBatch),
+            'telegram_confirmed':bool(confirmed_telegram),
             'google_connected':False,'autonomous_mail_connected':False}
 
 
