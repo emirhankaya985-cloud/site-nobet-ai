@@ -60,7 +60,7 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
         with factory() as db:
             # Serialize quota checks and inserts across independent PostgreSQL runners.
             # This transaction-level advisory lock releases on commit, before SMTP.
-            if db.bind.dialect.name == 'postgresql':
+            if db.get_bind().dialect.name == 'postgresql':
                 db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:org))"),
                            {'org': 'isletmepilot:mail:' + organization})
             used = db.scalar(select(func.count(MailClaim.id)).where(
