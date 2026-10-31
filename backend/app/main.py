@@ -260,37 +260,106 @@ def create_ntfy(org_id: str, user: User = Depends(current_user), db: Session = D
     return {"id":c.id, "kind":"ntfy", "topic":topic, "subscription_url":f"{get_settings().ntfy_base_url.rstrip('/')}/{topic}"}
 
 
+def _telegram_owner(db: Session, user: User, org_id: str):
+    """This product links a private owner inbox, not an organization admin inbox."""
+    membership = membership_of(db, user, org_id, write=True)
+    if membership.role != "owner":
+        raise HTTPException(403, "Only the organization owner can link Telegram")
+
+
+def _link_status(item: TelegramLinkCode) -> dict:
+    if item.confirmed_at is not None:
+        return {"state": "confirmed", "telegram_user_id": item.pending_telegram_user_id}
+    expiry = item.expires_at.replace(tzinfo=item.expires_at.tzinfo or __import__('datetime').timezone.utc)
+    if expiry <= utcnow():
+        return {"state": "expired", "telegram_user_id": None}
+    if item.redeemed_at is not None and item.pending_chat_id is not None:
+        return {"state": "pending_confirmation", "telegram_user_id": item.pending_telegram_user_id}
+    return {"state": "awaiting_telegram", "telegram_user_id": None}
+
+
 @app.post("/organizations/{org_id}/notifications/telegram/link-code")
 def telegram_link_code(org_id: str, user: User = Depends(current_user), db: Session = Depends(db_session)):
-    membership_of(db, user, org_id, write=True)
+    _telegram_owner(db, user, org_id)
     if not get_settings().telegram_bot_token or not get_settings().telegram_webhook_secret:
         raise HTTPException(503, "Telegram integration not configured")
-    token = secrets.token_urlsafe(24)
-    db.add(TelegramLinkCode(organization_id=org_id, code_hash=hashlib.sha256(token.encode()).hexdigest(), expires_at=utcnow() + timedelta(minutes=10)))
+    token = secrets.token_urlsafe(32)  # 256 bits; only SHA-256 goes to the database.
+    row = TelegramLinkCode(
+        organization_id=org_id, initiated_by_user_id=user.id,
+        code_hash=hashlib.sha256(token.encode()).hexdigest(),
+        expires_at=utcnow() + timedelta(minutes=10))
+    db.add(row)
     audit(db, user.id, org_id, "channel.telegram.link_requested")
     db.commit()
-    return {"instruction": "Send /start followed by the code to the configured Telegram bot within 10 minutes", "code":token}
+    return {"id": row.id,
+            "instruction": "Send /start CODE in your own private Telegram bot chat, then approve the matching Telegram account from this authenticated owner panel within 10 minutes",
+            "code": token}
+
+
+@app.get("/organizations/{org_id}/notifications/telegram/link-status/{link_id}")
+def telegram_link_status(org_id: str, link_id: str, user: User = Depends(current_user),
+                         db: Session = Depends(db_session)):
+    _telegram_owner(db, user, org_id)
+    item = db.scalar(select(TelegramLinkCode).where(
+        TelegramLinkCode.id == link_id, TelegramLinkCode.organization_id == org_id,
+        TelegramLinkCode.initiated_by_user_id == user.id))
+    if item is None:
+        raise HTTPException(404, "Link not found")
+    return _link_status(item)
+
+
+@app.post("/organizations/{org_id}/notifications/telegram/confirm/{link_id}")
+def telegram_confirm_link(org_id: str, link_id: str, user: User = Depends(current_user),
+                          db: Session = Depends(db_session)):
+    _telegram_owner(db, user, org_id)
+    # PostgreSQL row lock: a second simultaneous confirmation cannot create another channel.
+    item = db.scalar(select(TelegramLinkCode).where(
+        TelegramLinkCode.id == link_id, TelegramLinkCode.organization_id == org_id,
+        TelegramLinkCode.initiated_by_user_id == user.id).with_for_update())
+    if item is None:
+        raise HTTPException(404, "Link not found")
+    if _link_status(item)["state"] != "pending_confirmation":
+        raise HTTPException(409, "Link unavailable, expired or already used")
+    if not item.pending_chat_id or item.pending_chat_id != item.pending_telegram_user_id:
+        raise HTTPException(409, "Private owner chat verification failed")
+    db.add(NotificationChannel(
+        organization_id=org_id, kind="telegram",
+        destination=item.pending_chat_id, confirmed=True))
+    item.confirmed_at = utcnow()
+    audit(db, user.id, org_id, "channel.telegram.owner_confirmed")
+    db.commit()
+    return {"confirmed": True, "telegram_user_id": item.pending_telegram_user_id}
 
 
 @app.post("/integrations/telegram/webhook")
-def telegram_webhook(payload: dict, x_telegram_bot_api_secret_token: str | None = Header(default=None), db: Session = Depends(db_session)):
+def telegram_webhook(payload: dict, x_telegram_bot_api_secret_token: str | None = Header(default=None),
+                     db: Session = Depends(db_session)):
     secret = get_settings().telegram_webhook_secret
-    if not secret or not x_telegram_bot_api_secret_token or not hmac.compare_digest(secret, x_telegram_bot_api_secret_token):
+    if not secret or not x_telegram_bot_api_secret_token or not hmac.compare_digest(
+            secret, x_telegram_bot_api_secret_token):
         raise HTTPException(403, "Forbidden")
     msg = payload.get("message") or {}
     chat = msg.get("chat") or {}
+    sender = msg.get("from") or {}
     parts = str(msg.get("text", "")).split()
-    if chat.get("type") != "private" or len(parts) != 2 or not parts[0].startswith("/start"):
-        return {"ok":True}
+    chat_id, sender_id = chat.get("id"), sender.get("id")
+    if (chat.get("type") != "private" or len(parts) != 2 or parts[0] != "/start"
+            or type(chat_id) is not int or chat_id <= 0
+            or type(sender_id) is not int or sender_id != chat_id
+            or sender.get("is_bot") is True):
+        return {"ok": True}
     digest = hashlib.sha256(parts[1].encode()).hexdigest()
-    now = utcnow()
-    item = db.scalar(select(TelegramLinkCode).where(TelegramLinkCode.code_hash == digest, TelegramLinkCode.redeemed_at.is_(None)).with_for_update())
-    if item:
-        expires_at = item.expires_at.replace(tzinfo=item.expires_at.tzinfo or __import__('datetime').timezone.utc)
-        if expires_at > now and isinstance(chat.get("id"), int):
-            item.redeemed_at = now
-            db.add(NotificationChannel(organization_id=item.organization_id, kind="telegram", destination=str(chat["id"]), confirmed=True))
-            db.commit()
+    # Expired, old unbound and already redeemed codes are deliberately not accepted.
+    item = db.scalar(select(TelegramLinkCode).where(
+        TelegramLinkCode.code_hash == digest,
+        TelegramLinkCode.initiated_by_user_id.is_not(None),
+        TelegramLinkCode.redeemed_at.is_(None)).with_for_update())
+    if item and _link_status(item)["state"] == "awaiting_telegram":
+        item.redeemed_at = utcnow()
+        item.pending_chat_id = str(chat_id)
+        item.pending_telegram_user_id = str(sender_id)
+        db.commit()
+    # The webhook never confirms a channel; only the initiating owner in the panel can.
     return {"ok": True}
 
 
