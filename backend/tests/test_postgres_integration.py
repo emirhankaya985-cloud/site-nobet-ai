@@ -205,10 +205,35 @@ def test_postgres_concurrent_business_mail_deduplicates_recipient():
         for n in range(2):
             db.add(BusinessLead(organization_id=oid,source_id=f'node/{n}',name='Synthetic',email='race@example.invalid',email_source='OSM business contact tag',delivery_state='not_sent'))
         db.commit()
-    env=dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',BUSINESS_ORGANIZATION_ID=oid,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
+    env=dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=oid,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
     calls=[]
     def sender(claim, _):
         calls.append(claim.id)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _:run_once(session_factory(),env,sender),range(2)))
     assert len(calls)==1
+
+
+def test_postgres_parallel_send_limit_remains_five():
+    from app.models import BusinessLead, MailClaim
+    from app.business_mail import run_once
+    with session_factory()() as db:
+        org=Organization(name='Synthetic quota race')
+        db.add(org)
+        db.flush()
+        oid=org.id
+        db.add(NotificationChannel(organization_id=oid,kind='telegram',destination='123',confirmed=True))
+        for n in range(10):
+            db.add(BusinessLead(organization_id=oid,source_id=f'node/{n+900}',
+                name='Synthetic',email=f'quota{n}@example.invalid',
+                email_source='OSM business contact tag',delivery_state='not_sent'))
+        db.commit()
+    env=dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',
+        LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=oid,
+        GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
+    calls=[]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        list(pool.map(lambda _:run_once(session_factory(),env,lambda c,e:calls.append(c.id)),range(3)))
+    with session_factory()() as db:
+        assert len(db.scalars(select(MailClaim).where(MailClaim.organization_id==oid)).all())==5
+    assert len(calls)==5
