@@ -4,7 +4,7 @@ import hashlib
 
 from sqlalchemy import func, select
 
-from app.models import Membership, NotificationChannel, TelegramLinkCode, User, utcnow
+from app.models import Membership, NotificationChannel, TelegramLinkCode, utcnow
 
 
 WEBHOOK = "/integrations/telegram/webhook"
