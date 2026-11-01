@@ -59,8 +59,9 @@ Disable the **unified send flags only**; leave old send path disabled until
 reconciliation is investigated. Keep research and read-only watcher running.
 Roll API/web deployments back to the prior proven SHA
 `95809a3bb0ff1b29713fc76647c6478061f211de`.
-Both new tables and all copied facts intentionally **remain**; the Alembic
-downgrade performs no deletion. Never delete recipient guards or requeue
+All copied facts intentionally **remain**. The Alembic downgrade removes
+these additive tables **only if both are empty** (ephemeral CI); if any feedback
+or guard record exists, it fails closed rather than deleting evidence. Never delete recipient guards or requeue
 `accepted`, `uncertain`, `failed`, `delayed`, `rejected`, `deferred`,
 `reply`, or `opt-out` facts during rollback.
 
