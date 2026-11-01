@@ -9,7 +9,7 @@ def setup(database, org):
         db.add(NotificationChannel(organization_id=org,kind='telegram',destination='123',confirmed=True))
         db.add(BusinessLead(organization_id=org,source_id='node/1',name='Synthetic',email='info@example.invalid',email_source='OSM business contact tag',delivery_state='not_sent'))
         db.commit()
-    return dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=org,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
+    return dict(BUSINESS_SINGLE_SENDER='isletmepilot',BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=org,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
 
 
 def test_once_with_full_report(database,two_users):
@@ -110,3 +110,10 @@ def test_mail_body_only_routes_to_confirmed_telegram(database,two_users):
         assert len(private_reports)==1
         channel=db.get(NotificationChannel,private_reports[0].channel_id)
         assert channel.kind=='telegram'
+
+
+def test_second_sender_blocked_even_with_old_enable_flags(database,two_users):
+    env=setup(database,two_users[0]['organization_id'])
+    env.pop('BUSINESS_SINGLE_SENDER')
+    with pytest.raises(RuntimeError,match='Single sender'):
+        run_once(database,env,lambda *_:pytest.fail('No second SMTP writer'))
