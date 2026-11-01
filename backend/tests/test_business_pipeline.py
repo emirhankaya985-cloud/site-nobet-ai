@@ -34,7 +34,8 @@ async def test_research_import_mail_monitor_chain_is_idempotent(database,two_use
 async def test_activation_requires_legacy_sender_disabled():
     with pytest.raises(RuntimeError,match='legacy'):
         await run({'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_SINGLE_SENDER':'isletmepilot',
-                   'BUSINESS_HISTORY_RECONCILED':'true','BUSINESS_AUTO_MAIL_ENABLED':'true'})
+                   'BUSINESS_HISTORY_RECONCILED':'true','BUSINESS_AUTO_MAIL_ENABLED':'true'},
+                  mailer=lambda *_: pytest.fail('Must fail before mock SMTP'))
 
 
 @pytest.mark.asyncio
@@ -83,6 +84,19 @@ async def test_single_writer_gate_blocks_all_pipeline_side_effects():
     with pytest.raises(RuntimeError,match='Single sender'):
         await run(env, researcher=lambda _:pytest.fail('No research without cutover'))
 
+
+@pytest.mark.asyncio
+async def test_live_pipeline_fails_before_research_and_mail(database,two_users):
+    org=two_users[0]['organization_id']
+    env={'BUSINESS_PIPELINE_ENABLED':'true',
+         'BUSINESS_AUTO_MAIL_ENABLED':'true',
+         'BUSINESS_HISTORY_RECONCILED':'true',
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true',
+         'BUSINESS_SINGLE_SENDER':'isletmepilot',
+         'BUSINESS_ORGANIZATION_ID':org}
+    with pytest.raises(RuntimeError,match='Independent SMTP is retired'):
+        await run(env,database,lambda _:pytest.fail('research must not happen'))
+
 @pytest.mark.asyncio
 async def test_missing_smtp_prevents_research_and_batch_creation(database, two_users):
     from sqlalchemy import func
@@ -93,9 +107,8 @@ async def test_missing_smtp_prevents_research_and_batch_creation(database, two_u
            'BUSINESS_SINGLE_SENDER': 'isletmepilot',
            'BUSINESS_ORGANIZATION_ID': org}
     with pytest.raises(RuntimeError, match='SMTP configuration incomplete'):
-        await run(env=env, factory=database,
-                  researcher=lambda _: pytest.fail('No research before SMTP preflight'),
-                  monitor=AsyncMock())
+        from app.business_mail import ensure_mail_ready
+        ensure_mail_ready(database, env)
     with database() as db:
         assert db.scalar(select(func.count()).select_from(BusinessBatch)) == 0
         assert db.scalar(select(func.count()).select_from(BusinessLead)) == 0
@@ -112,9 +125,8 @@ async def test_unconfirmed_telegram_prevents_research(database, two_users):
            'BUSINESS_ORGANIZATION_ID': org, 'GMAIL_SENDER_ADDRESS': 'test@example.invalid',
            'GMAIL_APP_PASSWORD': 'synthetic'}
     with pytest.raises(RuntimeError, match='Confirmed private Telegram'):
-        await run(env=env, factory=database,
-                  researcher=lambda _: pytest.fail('No research without confirmed Telegram'),
-                  monitor=AsyncMock())
+        from app.business_mail import ensure_mail_ready
+        ensure_mail_ready(database, env)
     with database() as db:
         assert db.scalar(select(func.count()).select_from(BusinessBatch)) == 0
 

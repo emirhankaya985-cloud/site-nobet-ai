@@ -80,6 +80,10 @@ def reserve_recipient(db, org, recipient, origin, source_id=None):
 
 def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
     env = os.environ if env is None else env
+    # PR #10 safety: independent live SMTP is permanently retired.
+    # Only explicitly injected synthetic CI senders can pass this boundary.
+    if sender is smtp_send:
+        raise RuntimeError('Independent SMTP is retired; Müşteri Avcısı is sole sender')
     factory = factory or session_factory()
     ensure_mail_ready(factory, env)
     organization = env['BUSINESS_ORGANIZATION_ID']
