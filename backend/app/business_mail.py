@@ -27,11 +27,11 @@ def smtp_send(claim, env):
             raise RuntimeError('SMTP did not accept recipient')
 
 
-def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
-    env = os.environ if env is None else env
+def ensure_mail_ready(factory, env):
+    """Confirm outbound mail can run without touching leads or sending messages."""
     if env.get('BUSINESS_AUTO_MAIL_ENABLED') != 'true':
         raise RuntimeError('Unified mail worker disabled')
-    if not re.fullmatch(r'[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+',env.get('GMAIL_SENDER_ADDRESS','')) or not env.get('GMAIL_APP_PASSWORD'):
+    if not re.fullmatch(r'[^\\s@\\r\\n]+@[^\\s@\\r\\n]+\\.[^\\s@\\r\\n]+', env.get('GMAIL_SENDER_ADDRESS', '')) or not env.get('GMAIL_APP_PASSWORD'):
         raise RuntimeError('SMTP configuration incomplete')
     organization = env.get('BUSINESS_ORGANIZATION_ID')
     if not organization:
@@ -40,7 +40,20 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
         raise RuntimeError('Existing mail history must be reconciled before activation')
     if env.get('LEGACY_MAIL_WORKFLOW_DISABLED') != 'true':
         raise RuntimeError('Legacy sender must be disabled before unified mail activation')
+    with factory() as db:
+        channel = db.scalar(select(NotificationChannel.id).where(
+            NotificationChannel.organization_id == organization,
+            NotificationChannel.kind == 'telegram',
+            NotificationChannel.confirmed.is_(True)))
+        if not channel:
+            raise RuntimeError('Confirmed private Telegram channel required')
+
+
+def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
+    env = os.environ if env is None else env
     factory = factory or session_factory()
+    ensure_mail_ready(factory, env)
+    organization = env['BUSINESS_ORGANIZATION_ID']
     with factory() as db:
         stale = db.scalars(select(MailClaim).where(MailClaim.organization_id==organization,
             MailClaim.state=='sending',MailClaim.created_at < utcnow()-timedelta(minutes=5)).with_for_update(skip_locked=True)).all()
