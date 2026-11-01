@@ -33,6 +33,8 @@ def ensure_mail_ready(factory, env):
     """Confirm outbound mail can run without touching leads or sending messages."""
     if env.get('BUSINESS_AUTO_MAIL_ENABLED') != 'true':
         raise RuntimeError('Unified mail worker disabled')
+    if env.get('BUSINESS_SINGLE_SENDER') != 'isletmepilot':
+        raise RuntimeError('Single sender gate: legacy Müşteri Avcısı owns outreach')
     if not re.fullmatch(r'[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+', env.get('GMAIL_SENDER_ADDRESS', '')) or not env.get('GMAIL_APP_PASSWORD'):
         raise RuntimeError('SMTP configuration incomplete')
     organization = env.get('BUSINESS_ORGANIZATION_ID')
@@ -128,7 +130,7 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
             prior = db.scalar(select(BusinessLead.id).where(
                 BusinessLead.organization_id==organization, BusinessLead.id!=row.id,
                 func.lower(func.trim(BusinessLead.email))==row.email,
-                BusinessLead.delivery_state.in_(['accepted','sending','uncertain','rejected','deferred'])).limit(1))
+                BusinessLead.delivery_state.in_(['accepted','sending','uncertain','rejected','deferred','failed','delayed','replied'])).limit(1))
             if prior or historic_claim or not reserve_recipient(
                     db, organization, row.email, 'unified', row.source_id):
                 row.delivery_state='duplicate'

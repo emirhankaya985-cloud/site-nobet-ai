@@ -12,7 +12,7 @@ async def test_research_import_mail_monitor_chain_is_idempotent(database,two_use
         db.add(NotificationChannel(organization_id=org,kind='telegram',destination='123',confirmed=True))
         db.commit()
     env={'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true',
-         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_ORGANIZATION_ID':org,
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_SINGLE_SENDER':'isletmepilot','BUSINESS_ORGANIZATION_ID':org,
          'BUSINESS_AUTO_MAIL_ENABLED':'true'}
     rows=[{'type':'node','id':1,'tags':{'name':'Synthetic','shop':'beauty','email':'info@example.invalid'}}]
     calls=[]
@@ -33,14 +33,15 @@ async def test_research_import_mail_monitor_chain_is_idempotent(database,two_use
 @pytest.mark.asyncio
 async def test_activation_requires_legacy_sender_disabled():
     with pytest.raises(RuntimeError,match='legacy'):
-        await run({'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true','BUSINESS_AUTO_MAIL_ENABLED':'true'})
+        await run({'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_SINGLE_SENDER':'isletmepilot',
+                   'BUSINESS_HISTORY_RECONCILED':'true','BUSINESS_AUTO_MAIL_ENABLED':'true'})
 
 
 @pytest.mark.asyncio
 async def test_successful_daily_batch_blocks_second_mail_stage(database,two_users):
     org=two_users[0]['organization_id']
     env={'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_HISTORY_RECONCILED':'true',
-         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_ORGANIZATION_ID':org,
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true','BUSINESS_SINGLE_SENDER':'isletmepilot','BUSINESS_ORGANIZATION_ID':org,
          'BUSINESS_AUTO_MAIL_ENABLED':'true'}
     from unittest.mock import patch
     calls=[]
@@ -76,12 +77,20 @@ async def test_disabled_mail_never_leaves_a_daily_batch_or_imports(database, two
 
 
 @pytest.mark.asyncio
+async def test_single_writer_gate_blocks_all_pipeline_side_effects():
+    env={'BUSINESS_PIPELINE_ENABLED':'true','BUSINESS_AUTO_MAIL_ENABLED':'true',
+         'BUSINESS_HISTORY_RECONCILED':'true','LEGACY_MAIL_WORKFLOW_DISABLED':'true'}
+    with pytest.raises(RuntimeError,match='Single sender'):
+        await run(env, researcher=lambda _:pytest.fail('No research without cutover'))
+
+@pytest.mark.asyncio
 async def test_missing_smtp_prevents_research_and_batch_creation(database, two_users):
     from sqlalchemy import func
     from app.models import BusinessBatch
     org = two_users[0]['organization_id']
     env = {'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_AUTO_MAIL_ENABLED': 'true',
            'BUSINESS_HISTORY_RECONCILED': 'true', 'LEGACY_MAIL_WORKFLOW_DISABLED': 'true',
+           'BUSINESS_SINGLE_SENDER': 'isletmepilot',
            'BUSINESS_ORGANIZATION_ID': org}
     with pytest.raises(RuntimeError, match='SMTP configuration incomplete'):
         await run(env=env, factory=database,
@@ -99,6 +108,7 @@ async def test_unconfirmed_telegram_prevents_research(database, two_users):
     org = two_users[0]['organization_id']
     env = {'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_AUTO_MAIL_ENABLED': 'true',
            'BUSINESS_HISTORY_RECONCILED': 'true', 'LEGACY_MAIL_WORKFLOW_DISABLED': 'true',
+           'BUSINESS_SINGLE_SENDER': 'isletmepilot',
            'BUSINESS_ORGANIZATION_ID': org, 'GMAIL_SENDER_ADDRESS': 'test@example.invalid',
            'GMAIL_APP_PASSWORD': 'synthetic'}
     with pytest.raises(RuntimeError, match='Confirmed private Telegram'):
@@ -118,7 +128,8 @@ async def test_early_istanbul_mail_claim_prevents_batch_deletion_on_failure(data
 
     org = two_users[0]['organization_id']
     env = {'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_HISTORY_RECONCILED': 'true',
-           'LEGACY_MAIL_WORKFLOW_DISABLED': 'true', 'BUSINESS_ORGANIZATION_ID': org,
+           'LEGACY_MAIL_WORKFLOW_DISABLED': 'true',
+           'BUSINESS_SINGLE_SENDER': 'isletmepilot', 'BUSINESS_ORGANIZATION_ID': org,
            'BUSINESS_AUTO_MAIL_ENABLED': 'true'}
 
     class FrozenDateTime(datetime):

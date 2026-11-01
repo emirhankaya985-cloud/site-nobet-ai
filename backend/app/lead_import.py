@@ -65,6 +65,7 @@ def parse_import(payload, organization_id):
         source = public_https(source) if source != 'OSM business contact tag' else source
     website = public_https(payload['website']) if payload.get('website') else None
     state = payload.get('delivery_state', 'unknown')
-    if state not in ('not_sent', 'accepted', 'sending', 'uncertain', 'rejected', 'deferred', 'unknown'):
+    if state not in ('not_sent', 'accepted', 'sending', 'uncertain', 'rejected', 'deferred',
+                     'failed', 'delayed', 'replied', 'unknown'):
         raise ValueError('Invalid delivery state')
     return LeadImport(organization_id, source_id, name.strip(), website, email, source, state)

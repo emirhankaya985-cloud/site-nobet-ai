@@ -205,7 +205,7 @@ def test_postgres_concurrent_business_mail_deduplicates_recipient():
         for n in range(2):
             db.add(BusinessLead(organization_id=oid,source_id=f'node/{n}',name='Synthetic',email='race@example.invalid',email_source='OSM business contact tag',delivery_state='not_sent'))
         db.commit()
-    env=dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=oid,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
+    env=dict(BUSINESS_SINGLE_SENDER='isletmepilot',BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=oid,GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
     calls=[]
     def sender(claim, _):
         calls.append(claim.id)
@@ -228,7 +228,7 @@ def test_postgres_parallel_send_limit_remains_five():
                 name='Synthetic',email=f'quota{n}@example.invalid',
                 email_source='OSM business contact tag',delivery_state='not_sent'))
         db.commit()
-    env=dict(BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',
+    env=dict(BUSINESS_SINGLE_SENDER='isletmepilot',BUSINESS_AUTO_MAIL_ENABLED='true',BUSINESS_HISTORY_RECONCILED='true',
         LEGACY_MAIL_WORKFLOW_DISABLED='true',BUSINESS_ORGANIZATION_ID=oid,
         GMAIL_SENDER_ADDRESS='owner@example.invalid',GMAIL_APP_PASSWORD='synthetic')
     calls=[]
@@ -332,7 +332,7 @@ async def test_postgres_mail_crash_preserves_claim_and_daily_barrier():
         db.commit()
         lid=lead.id
     env={'BUSINESS_PIPELINE_ENABLED':'true', 'BUSINESS_HISTORY_RECONCILED':'true',
-         'LEGACY_MAIL_WORKFLOW_DISABLED':'true', 'BUSINESS_AUTO_MAIL_ENABLED':'true',
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true', 'BUSINESS_SINGLE_SENDER':'isletmepilot', 'BUSINESS_AUTO_MAIL_ENABLED':'true',
          'BUSINESS_ORGANIZATION_ID':oid}
     def interrupted(factory,_env):
         with factory() as db:
@@ -355,7 +355,6 @@ async def test_postgres_mail_crash_preserves_claim_and_daily_barrier():
         result=await run(env=env,factory=session_factory(),researcher=lambda _: pytest.fail('retry'),
                          mailer=lambda *_:pytest.fail('SMTP retry'),monitor=AsyncMock())
     assert result['skipped_existing_daily_batch']==1
-
 
 def test_postgres_two_independent_sender_origins_reserve_once():
     """Shared DB exclusion test: models legacy/unified peers using the same guard.

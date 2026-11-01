@@ -14,7 +14,19 @@ def convert(source_id, data, status, org):
         state=status
     elif status=='email_sent':
         state='accepted'
-    if state not in ('accepted','sending','uncertain','rejected','deferred'):
+    if state == 'accepted':
+        # Record SMTP acceptance separately from later delivery/reply evidence.
+        # A permanent failure is NOT delivery and must stay suppressed.
+        feedback = (record.get('delivery_feedback') or {}).get('state')
+        reply = (record.get('reply_feedback') or {}).get('state')
+        if feedback == 'failed':
+            state = 'failed'
+        elif reply == 'sender_matched_reply':
+            state = 'replied'
+        elif feedback == 'delayed':
+            state = 'delayed'
+    if state not in ('accepted','sending','uncertain','rejected','deferred',
+                     'failed','delayed','replied'):
         state='unknown'  # Old draft/skipped state never becomes new send permission.
     email=record.get('recipient') or data.get('email') or None
     source=record.get('recipient_source') or data.get('email_source')
@@ -51,9 +63,15 @@ def run(env=None, factory=None):
                                                          BusinessLead.source_id==record.source_id))
             if existing:
                 # Never discard evidence of an earlier send when a new draft exists.
-                frozen = ('accepted', 'sending', 'uncertain', 'rejected', 'deferred')
-                # Never downgrade a prior send or explicit owner decision.
-                if existing.delivery_state not in frozen and record.delivery_state in frozen:
+                frozen = ('accepted', 'sending', 'uncertain', 'rejected', 'deferred',
+                          'failed', 'delayed', 'replied')
+                # Add later Gmail feedback without losing the old claim. Never
+                # turn a failed/replied/unsubscribed lead back into a prospect.
+                if (existing.delivery_state not in frozen and record.delivery_state in frozen
+                        or existing.delivery_state == 'accepted' and
+                        record.delivery_state in ('failed', 'delayed', 'replied')
+                        or existing.delivery_state == 'delayed' and
+                        record.delivery_state in ('failed', 'replied')):
                     existing.delivery_state = record.delivery_state
                 continue
             db.add(BusinessLead(organization_id=org,source_id=record.source_id,name=record.name,
@@ -61,10 +79,9 @@ def run(env=None, factory=None):
                 delivery_state=record.delivery_state))
             inserted+=1
         db.flush()
-        # Historical accepts and delivery feedback are ledger facts, not new mail.
-        history = reconcile_frozen_history(db, org, [
-            (lid, json.loads(data) if isinstance(data, str) else data, status)
-            for lid, data, status in rows])
+        history = reconcile_frozen_history(db,org,[
+            (lid,json.loads(data) if isinstance(data,str) else data,status)
+            for lid,data,status in rows])
         db.commit()
     return {'source_rows':len(records),'inserted':inserted,'business_mail_sent':0, **history}
 
