@@ -33,7 +33,7 @@ class RuleBasedProvider:
         # Contrast words must be standalone: "tamam" contains "ama", and
         # "butter" contains "but", neither denotes a complaint.
         complaint = (any(stem in text for stem in ('kötü', 'berbat', 'geç', 'şikayet', 'slow', 'disappointed'))
-                     or bool(re.search(r'(?<!\\w)(?:ama|fakat|however|but|bad)(?!\\w)', text)))
+                     or bool(re.search(r'(?<!\w)(?:ama|fakat|however|but|bad)(?!\w)', text)))
         language = 'en' if any(w in text for w in ('the ', 'service ', 'was ', 'very ', 'staff ', 'however ')) else 'tr'
         sentiment = 'mixed' if stars >= 4 and complaint else ('negative' if stars <= 2 or complaint else 'positive' if stars >= 4 else 'neutral')
         priority = 'high' if stars <= 2 or (complaint and stars <= 3) else 'medium' if complaint else 'low'
