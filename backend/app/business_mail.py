@@ -35,6 +35,11 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
     # cutover. A generic mail=true variable must not create a second sender.
     if env.get('BUSINESS_SINGLE_SENDER') != 'isletmepilot':
         raise RuntimeError('Single sender gate: legacy Müşteri Avcısı owns outreach')
+    # The real SMTP implementation is deliberately retired. Synthetic CI tests
+    # inject a fake sender; production cannot enable a second SMTP worker by
+    # merely changing GitHub variables, even if all legacy flags are set.
+    if sender is smtp_send:
+        raise RuntimeError('Independent SMTP is retired; Müşteri Avcısı is sole sender')
     if not re.fullmatch(r'[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+',env.get('GMAIL_SENDER_ADDRESS','')) or not env.get('GMAIL_APP_PASSWORD'):
         raise RuntimeError('SMTP configuration incomplete')
     organization = env.get('BUSINESS_ORGANIZATION_ID')
