@@ -117,3 +117,9 @@ def test_second_sender_blocked_even_with_old_enable_flags(database,two_users):
     env.pop('BUSINESS_SINGLE_SENDER')
     with pytest.raises(RuntimeError,match='Single sender'):
         run_once(database,env,lambda *_:pytest.fail('No second SMTP writer'))
+
+
+def test_live_default_sender_retired_even_if_all_flags_enabled(database,two_users):
+    env=setup(database,two_users[0]['organization_id'])
+    with pytest.raises(RuntimeError,match='Independent SMTP is retired'):
+        run_once(database,env)
