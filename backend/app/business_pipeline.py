@@ -29,6 +29,8 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
     # create a daily batch when SMTP is disabled. No pretend mail-free run.
     if env.get('BUSINESS_AUTO_MAIL_ENABLED') != 'true':
         raise RuntimeError('Unified mail disabled; no daily batch or side effects created')
+    if env.get('BUSINESS_SINGLE_SENDER') != 'isletmepilot':
+        raise RuntimeError('Single sender gate: legacy Müşteri Avcısı owns outreach')
     if env.get('BUSINESS_HISTORY_RECONCILED') != 'true' or env.get('LEGACY_MAIL_WORKFLOW_DISABLED') != 'true':
         raise RuntimeError('Reconcile history and disable legacy sender before unified activation')
     org = env.get('BUSINESS_ORGANIZATION_ID')
