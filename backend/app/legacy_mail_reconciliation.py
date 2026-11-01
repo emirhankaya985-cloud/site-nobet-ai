@@ -64,7 +64,9 @@ def reconcile_frozen_history(db, organization, source_rows):
                               body=body, state="accepted")
             db.add(claim)
             db.flush()
-            lead.delivery_state = "accepted"
+            # Keep later failure, delay, reply and suppression states.
+            if lead.delivery_state not in ("failed", "delayed", "replied", "rejected", "deferred"):
+                lead.delivery_state = "accepted"
             result["imported_claims"] += 1
         if reserve_recipient(db, organization, recipient, "legacy", source_id):
             result["guarded"] += 1
