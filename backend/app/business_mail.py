@@ -31,7 +31,7 @@ def ensure_mail_ready(factory, env):
     """Confirm outbound mail can run without touching leads or sending messages."""
     if env.get('BUSINESS_AUTO_MAIL_ENABLED') != 'true':
         raise RuntimeError('Unified mail worker disabled')
-    if not re.fullmatch(r'[^\\s@\\r\\n]+@[^\\s@\\r\\n]+\\.[^\\s@\\r\\n]+', env.get('GMAIL_SENDER_ADDRESS', '')) or not env.get('GMAIL_APP_PASSWORD'):
+    if not re.fullmatch(r'[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+', env.get('GMAIL_SENDER_ADDRESS', '')) or not env.get('GMAIL_APP_PASSWORD'):
         raise RuntimeError('SMTP configuration incomplete')
     organization = env.get('BUSINESS_ORGANIZATION_ID')
     if not organization:
