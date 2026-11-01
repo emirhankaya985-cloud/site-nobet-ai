@@ -53,3 +53,16 @@ def test_original_leadpilot_and_yorumpilot_rules_are_wired(client,two_users):
     result=client.post(base+'/reviews/import',headers=headers(a),json={'source_id':'bad-service','review_text':'Çok bekledim, hizmet kötüydü','stars':1})
     assert result.status_code==200
     assert 'olumsuz deneyim' in result.json()['reply_text']
+
+
+def test_yorumpilot_avoids_false_negative_sentiment_from_substrings(client, two_users):
+    org = two_users[0]['organization_id']
+    base=f"/organizations/{org}/business/reviews/import"
+    auth=headers(two_users[0])
+    for slug, msg in (('tr-happy', 'Tamam, çok memnun kaldım'),
+                      ('en-happy', 'The butter was delicious')):
+        reply=client.post(base,headers=auth,
+                          json={'source_id':slug,'review_text':msg,'stars':5})
+        assert reply.status_code==200
+        assert 'olumsuz deneyim' not in reply.json()['reply_text']
+        assert 'sorry your experience' not in reply.json()['reply_text']

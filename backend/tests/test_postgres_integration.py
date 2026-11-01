@@ -355,3 +355,36 @@ async def test_postgres_mail_crash_preserves_claim_and_daily_barrier():
         result=await run(env=env,factory=session_factory(),researcher=lambda _: pytest.fail('retry'),
                          mailer=lambda *_:pytest.fail('SMTP retry'),monitor=AsyncMock())
     assert result['skipped_existing_daily_batch']==1
+
+def test_postgres_two_independent_sender_origins_reserve_once():
+    """Shared DB exclusion test: models legacy/unified peers using the same guard.
+
+    Does not claim the unmodified old repository uses this guard in production.
+    """
+    from app.business_mail import reserve_recipient
+    from app.models import BusinessRecipientGuard
+    with session_factory()() as db:
+        org = Organization(name='Two sender handoff CI')
+        db.add(org)
+        db.commit()
+        oid = org.id
+    from threading import Barrier
+    barrier = Barrier(2)
+
+    def competing_sender(origin):
+        with session_factory()() as db:
+            barrier.wait(timeout=10)
+            allowed = reserve_recipient(
+                db, oid,
+                '  SAME@example.invalid  ' if origin == 'legacy' else 'same@example.invalid',
+                origin, f'node/{21 if origin == "legacy" else 22}')
+            db.commit()
+            return allowed
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(competing_sender, ('legacy', 'unified')))
+    assert sorted(results) == [False, True]
+    with session_factory()() as db:
+        reserved = db.scalars(select(BusinessRecipientGuard).where(
+            BusinessRecipientGuard.recipient_normalized == 'same@example.invalid')).all()
+        assert len(reserved) == 1

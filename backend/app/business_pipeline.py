@@ -1,12 +1,12 @@
 """Single-project research -> CRM -> mail -> Telegram + SiteNöbet batch."""
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from .business import import_lead, ImportLead, event
-from .business_mail import run_once as mail_once
+from .business_mail import run_once as mail_once, ensure_mail_ready
 from .database import session_factory
 from .models import Membership, User, BusinessBatch, MailClaim
 from .notifications import deliver_one
@@ -31,8 +31,6 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
         raise RuntimeError('Unified mail disabled; no daily batch or side effects created')
     if env.get('BUSINESS_SINGLE_SENDER') != 'isletmepilot':
         raise RuntimeError('Single sender gate: legacy Müşteri Avcısı owns outreach')
-    # Do not import or create daily batches before discovering the live mail
-    # worker is permanently retired. CRM API and SiteNobet monitor remain live.
     if mailer is mail_once:
         raise RuntimeError('Independent SMTP is retired; Müşteri Avcısı is sole sender')
     if env.get('BUSINESS_HISTORY_RECONCILED') != 'true' or env.get('LEGACY_MAIL_WORKFLOW_DISABLED') != 'true':
@@ -45,6 +43,10 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
         if not owner:
             raise RuntimeError('Owner organization not found')
         owner_id = owner.id
+    # The live SMTP path must be ready before OSM research, CRM writes, or
+    # creation of a daily batch. Injected test mailers remain side-effect free.
+    if mailer is mail_once:
+        ensure_mail_ready(factory, env)
     with factory() as db:
         batch=BusinessBatch(organization_id=org,day=datetime.now(ZoneInfo('Europe/Istanbul')).date().isoformat())
         db.add(batch)
@@ -105,7 +107,9 @@ async def run(env=None, factory=None, researcher=get_osm, mailer=mail_once, moni
                 # If the sender crashed after persisting a claim, retain the
                 # daily barrier. Sending or uncertain claims must never be erased.
                 today = datetime.now(ZoneInfo('Europe/Istanbul')).date()
-                cutoff = datetime.combine(today, datetime.min.time(), ZoneInfo('Europe/Istanbul'))
+                cutoff = datetime.combine(
+                    today, datetime.min.time(), ZoneInfo('Europe/Istanbul')
+                ).astimezone(timezone.utc)
                 claim = db.scalar(select(MailClaim.id).where(
                     MailClaim.organization_id == org,
                     MailClaim.created_at >= cutoff).limit(1))

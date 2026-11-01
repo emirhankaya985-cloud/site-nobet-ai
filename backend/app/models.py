@@ -198,6 +198,31 @@ class MailClaim(Base):
     __table_args__ = (UniqueConstraint("organization_id", "recipient"),)
 
 
+class BusinessMailFeedback(Base):
+    """One immutable external delivery/reply fact, linked to the original SMTP claim."""
+    __tablename__ = "business_mail_feedback"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("business_mail_claims.id"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    telegram_receipt_id: Mapped[int | None] = mapped_column(Integer)
+    __table_args__ = (UniqueConstraint("claim_id", "provider", "kind"),)
+
+
+class BusinessRecipientGuard(Base):
+    """Shared, durable recipient exclusion key; both future senders must use this DB."""
+    __tablename__ = "business_recipient_guard"
+    recipient_normalized: Mapped[str] = mapped_column(String(254), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    origin: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_id: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+
+
 class BusinessBatch(Base):
     __tablename__ = "business_batches"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

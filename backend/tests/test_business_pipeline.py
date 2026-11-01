@@ -96,3 +96,81 @@ async def test_live_pipeline_fails_before_research_and_mail(database,two_users):
          'BUSINESS_ORGANIZATION_ID':org}
     with pytest.raises(RuntimeError,match='Independent SMTP is retired'):
         await run(env,database,lambda _:pytest.fail('research must not happen'))
+
+@pytest.mark.asyncio
+async def test_missing_smtp_prevents_research_and_batch_creation(database, two_users):
+    from sqlalchemy import func
+    from app.models import BusinessBatch
+    org = two_users[0]['organization_id']
+    env = {'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_AUTO_MAIL_ENABLED': 'true',
+           'BUSINESS_HISTORY_RECONCILED': 'true', 'LEGACY_MAIL_WORKFLOW_DISABLED': 'true',
+           'BUSINESS_SINGLE_SENDER': 'isletmepilot',
+           'BUSINESS_ORGANIZATION_ID': org}
+    with pytest.raises(RuntimeError, match='SMTP configuration incomplete'):
+        from app.business_mail import ensure_mail_ready
+        ensure_mail_ready(database, env)
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(BusinessBatch)) == 0
+        assert db.scalar(select(func.count()).select_from(BusinessLead)) == 0
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_telegram_prevents_research(database, two_users):
+    from sqlalchemy import func
+    from app.models import BusinessBatch
+    org = two_users[0]['organization_id']
+    env = {'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_AUTO_MAIL_ENABLED': 'true',
+           'BUSINESS_HISTORY_RECONCILED': 'true', 'LEGACY_MAIL_WORKFLOW_DISABLED': 'true',
+           'BUSINESS_SINGLE_SENDER': 'isletmepilot',
+           'BUSINESS_ORGANIZATION_ID': org, 'GMAIL_SENDER_ADDRESS': 'test@example.invalid',
+           'GMAIL_APP_PASSWORD': 'synthetic'}
+    with pytest.raises(RuntimeError, match='Confirmed private Telegram'):
+        from app.business_mail import ensure_mail_ready
+        ensure_mail_ready(database, env)
+    with database() as db:
+        assert db.scalar(select(func.count()).select_from(BusinessBatch)) == 0
+
+
+@pytest.mark.asyncio
+async def test_early_istanbul_mail_claim_prevents_batch_deletion_on_failure(database, two_users):
+    from datetime import datetime, timezone
+    from unittest.mock import patch
+    from zoneinfo import ZoneInfo
+    from app.models import BusinessBatch, MailClaim
+
+    org = two_users[0]['organization_id']
+    env = {'BUSINESS_PIPELINE_ENABLED': 'true', 'BUSINESS_HISTORY_RECONCILED': 'true',
+           'LEGACY_MAIL_WORKFLOW_DISABLED': 'true',
+           'BUSINESS_SINGLE_SENDER': 'isletmepilot', 'BUSINESS_ORGANIZATION_ID': org,
+           'BUSINESS_AUTO_MAIL_ENABLED': 'true'}
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 1, 0, 40, tzinfo=ZoneInfo('Europe/Istanbul'))
+
+    def interrupted_mailer(factory, _env):
+        with factory() as db:
+            lead = BusinessLead(organization_id=org, source_id='node/999',
+                                name='Synthetic', email='synthetic@example.invalid',
+                                email_source='test', delivery_state='sending')
+            db.add(lead)
+            db.flush()
+            db.add(MailClaim(organization_id=org, lead_id=lead.id,
+                             recipient=lead.email, subject='Synthetic',
+                             body='Synthetic', state='sending',
+                             created_at=datetime(2026, 10, 31, 21, 10,
+                                                 tzinfo=timezone.utc)))
+            db.commit()
+        raise RuntimeError('Synthetic crash after persistent mail claim')
+
+    with patch('app.business_pipeline.datetime', FrozenDateTime), patch(
+            'app.business_pipeline.drain', new_callable=AsyncMock):
+        with pytest.raises(RuntimeError, match='Synthetic crash'):
+            await run(env=env, factory=database, researcher=lambda _: [],
+                      mailer=interrupted_mailer, monitor=AsyncMock())
+    with database() as db:
+        assert db.scalar(select(BusinessBatch).where(
+            BusinessBatch.organization_id == org)) is not None
+        assert db.scalar(select(MailClaim).where(
+            MailClaim.organization_id == org)) is not None

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from .database import session_factory
 from .lead_import import parse_import
 from .models import BusinessLead, Organization
+from .legacy_mail_reconciliation import reconcile_frozen_history
 
 
 def convert(source_id, data, status, org):
@@ -77,8 +78,12 @@ def run(env=None, factory=None):
                 email=record.email,email_source=record.email_source,website=record.website,
                 delivery_state=record.delivery_state))
             inserted+=1
+        db.flush()
+        history = reconcile_frozen_history(db,org,[
+            (lid,json.loads(data) if isinstance(data,str) else data,status)
+            for lid,data,status in rows])
         db.commit()
-    return {'source_rows':len(records),'inserted':inserted,'business_mail_sent':0}
+    return {'source_rows':len(records),'inserted':inserted,'business_mail_sent':0, **history}
 
 
 if __name__=='__main__':
