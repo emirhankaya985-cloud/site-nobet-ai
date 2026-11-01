@@ -72,8 +72,10 @@ def reserve_recipient(db, org, recipient, origin, source_id=None):
     else:
         raise RuntimeError('Recipient guard requires PostgreSQL or isolated SQLite test')
     statement = statement.on_conflict_do_nothing(
-        index_elements=[BusinessRecipientGuard.recipient_normalized])
-    return db.execute(statement).rowcount == 1
+        index_elements=[BusinessRecipientGuard.recipient_normalized]).returning(
+            BusinessRecipientGuard.recipient_normalized)
+    # psycopg rowcount is not a reliable inserted/not-inserted signal.
+    return db.execute(statement).scalar_one_or_none() is not None
 
 
 def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
