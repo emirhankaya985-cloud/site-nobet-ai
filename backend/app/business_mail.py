@@ -58,7 +58,7 @@ def reserve_recipient(db, org, recipient, origin, source_id=None):
     a legacy sender which still uses a separate database.
     """
     normalized = recipient.strip().casefold()
-    if not re.fullmatch(r'[^\\s@\\r\\n]+@[^\\s@\\r\\n]+\\.[^\\s@\\r\\n]+', normalized):
+    if not re.fullmatch(r'[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+', normalized):
         raise ValueError('Invalid recipient for shared guard')
     values = dict(recipient_normalized=normalized, organization_id=org,
                   origin=origin, source_id=source_id)
