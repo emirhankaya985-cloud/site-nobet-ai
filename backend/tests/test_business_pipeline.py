@@ -82,3 +82,16 @@ async def test_single_writer_gate_blocks_all_pipeline_side_effects():
          'BUSINESS_HISTORY_RECONCILED':'true','LEGACY_MAIL_WORKFLOW_DISABLED':'true'}
     with pytest.raises(RuntimeError,match='Single sender'):
         await run(env, researcher=lambda _:pytest.fail('No research without cutover'))
+
+
+@pytest.mark.asyncio
+async def test_live_pipeline_fails_before_research_and_mail(database,two_users):
+    org=two_users[0]['organization_id']
+    env={'BUSINESS_PIPELINE_ENABLED':'true',
+         'BUSINESS_AUTO_MAIL_ENABLED':'true',
+         'BUSINESS_HISTORY_RECONCILED':'true',
+         'LEGACY_MAIL_WORKFLOW_DISABLED':'true',
+         'BUSINESS_SINGLE_SENDER':'isletmepilot',
+         'BUSINESS_ORGANIZATION_ID':org}
+    with pytest.raises(RuntimeError,match='Independent SMTP is retired'):
+        await run(env,database,lambda _:pytest.fail('research must not happen'))
