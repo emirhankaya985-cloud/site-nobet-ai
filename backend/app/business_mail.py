@@ -8,7 +8,9 @@ from zoneinfo import ZoneInfo
 from email.message import EmailMessage
 from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError
-from .models import BusinessLead, MailClaim, NotificationChannel, utcnow
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from .models import BusinessLead, MailClaim, NotificationChannel, BusinessRecipientGuard, utcnow
 from .business import event
 from .database import session_factory
 
@@ -47,6 +49,29 @@ def ensure_mail_ready(factory, env):
             NotificationChannel.confirmed.is_(True)))
         if not channel:
             raise RuntimeError('Confirmed private Telegram channel required')
+
+
+def reserve_recipient(db, org, recipient, origin, source_id=None):
+    """Atomically reserve a normalized address in one shared PostgreSQL database.
+
+    Both sender implementations must call this before SMTP; this cannot protect
+    a legacy sender which still uses a separate database.
+    """
+    normalized = recipient.strip().casefold()
+    if not re.fullmatch(r'[^\\s@\\r\\n]+@[^\\s@\\r\\n]+\\.[^\\s@\\r\\n]+', normalized):
+        raise ValueError('Invalid recipient for shared guard')
+    values = dict(recipient_normalized=normalized, organization_id=org,
+                  origin=origin, source_id=source_id)
+    dialect = db.get_bind().dialect.name
+    if dialect == 'postgresql':
+        statement = pg_insert(BusinessRecipientGuard).values(**values)
+    elif dialect == 'sqlite':
+        statement = sqlite_insert(BusinessRecipientGuard).values(**values)
+    else:
+        raise RuntimeError('Recipient guard requires PostgreSQL or isolated SQLite test')
+    statement = statement.on_conflict_do_nothing(
+        index_elements=[BusinessRecipientGuard.recipient_normalized])
+    return db.execute(statement).rowcount == 1
 
 
 def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
@@ -104,7 +129,8 @@ def run_once(factory=None, env=None, sender=smtp_send, maximum=5):
                 BusinessLead.organization_id==organization, BusinessLead.id!=row.id,
                 func.lower(func.trim(BusinessLead.email))==row.email,
                 BusinessLead.delivery_state.in_(['accepted','sending','uncertain','rejected','deferred'])).limit(1))
-            if prior or historic_claim:
+            if prior or historic_claim or not reserve_recipient(
+                    db, organization, row.email, 'unified', row.source_id):
                 row.delivery_state='duplicate'
                 db.commit()
                 result['duplicate']+=1
