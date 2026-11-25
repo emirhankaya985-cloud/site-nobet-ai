@@ -1,12 +1,12 @@
 # SiteNöbet AI
 
-> **STRICT ZERO-COST MODE (26 October 2026):** Only Free tiers allowed. The dedicated `sitenobet-ai-free` Neon Free database is provisioned. The GitHub Actions scheduled worker is written but **disabled until owner-configured `SITENOBET_DATABASE_URL` exists**. The worker does not need the API session secret. All new Free-mode source/CI checks passed; **no hosted monitoring is active yet and no 24/7 SLA is promised**.
+> **Free pilot status (25 November 2026):** Only Free tiers are intended. The dedicated `sitenobet-ai-free` Neon Free database is provisioned. The scheduled GitHub Actions monitor ran successfully on [25 November](https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/45583491520), including configuration and bounded monitor jobs. This shows scheduled execution, not verified external outage detection or Telegram/ntfy delivery. The worker does not need the API session secret. **No 24/7 SLA is promised.**
 >
 > **Start here:** [Free pilot setup](docs/ZERO_TL_FREE_PILOT.md). Render `render.yaml` now lists **only Free web services**; it does not create paid Postgres or a paid worker.
 
 A multi-tenant web monitoring SaaS MVP prototype: independent Python background worker, FastAPI API, PostgreSQL with Alembic, Telegram / ntfy event outbox, and a responsive Next.js dashboard.
 
-> **Development status (2026-10-26):** Verified GitHub CI [#40280592303](https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/40280592303) on commit `83d94891`: all 3 jobs green; 55 default backend tests passed (6 PostgreSQL-only tests intentionally skipped in that step), then all **6 real PostgreSQL 17 integration tests passed** separately; dependency audit, PostgreSQL migrations, frontend build, and Docker builds succeeded. **This is CI acceptance, NOT production acceptance.** SiteNöbet has not been deployed to Render; real Telegram/ntfy delivery, external outage/recovery drill, independently watched worker heartbeat, backup/restore and 7-day pilot remain unverified.
+> **Development status (2026-10-26):** Verified GitHub CI [#40280592303](https://github.com/emirhankaya985-cloud/site-nobet-ai/actions/runs/40280592303) on commit `83d94891`: all 3 jobs green; 55 default backend tests passed (6 PostgreSQL-only tests intentionally skipped in that step), then all **6 real PostgreSQL 17 integration tests passed** separately; dependency audit, PostgreSQL migrations, frontend build, and Docker builds succeeded. **This is CI acceptance, NOT production acceptance.** That October CI result remains a code acceptance record. Render deployment is not established by the scheduled run; real Telegram/ntfy delivery, external outage/recovery drill, independently watched worker heartbeat, backup/restore and 7-day pilot remain unverified.
 
 ## Architecture
 
