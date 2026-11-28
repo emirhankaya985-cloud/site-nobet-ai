@@ -13,9 +13,9 @@ The owner explicitly requires **zero TL**. **Do not create paid Render resources
 ## Setup sequence (do not reveal secrets)
 
 1. Existing Neon Free project `sitenobet-ai-free` has database `sitenobet`; copy its connection string using Neon Dashboard; never post it in chat or commit.
-2. Owner configures GitHub Secrets: `SITENOBET_DATABASE_URL`, `SITENOBET_SESSION_SECRET` (and optional `SITENOBET_TELEGRAM_BOT_TOKEN`).
-3. Owner sets GitHub Actions variable `SITENOBET_FREE_MONITOR_ENABLED=true`, then triggers the `SiteNobet Free Scheduled Monitor` workflow manually and verifies a successful log. GitHub schedule runs every nominal 15 min UTC and may be delayed or skipped.
-4. Configure the two Render **Free** web services *only* after DB credentials and exact HTTPS origins exist. API: `APP_ENV=production`, `APP_ROLE=api`, `SCHEDULER_MODE=cron`, shared `DATABASE_URL` and `SESSION_SECRET`, `CORS_ORIGINS`. Frontend: `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CHECK_INTERVAL_SECONDS=900`. Render Free web services may sleep and cold-start.
+2. Owner configures GitHub Actions secret `SITENOBET_DATABASE_URL` with the dedicated Neon Free connection string. `SITENOBET_SESSION_SECRET` and `SITENOBET_FREE_MONITOR_ENABLED` are not used by the current scheduled worker. Keep API secrets in its runtime environment.
+3. The `SiteNobet Free Scheduled Monitor` configuration job checks secret presence without printing its value; the monitor job runs only when `SITENOBET_DATABASE_URL` is present. Verify an existing scheduled run or, if separately authorized, trigger a manual run. GitHub schedule runs every nominal 15 min UTC and may be delayed or skipped.
+4. Configure the two Render **Free** web services *only* after DB credentials and exact HTTPS origins exist. API: `APP_ENV=production`, `APP_ROLE=api`, `SCHEDULER_MODE=cron`, `DATABASE_URL`, `SESSION_SECRET`, `CORS_ORIGINS`. If Telegram is enabled, also configure `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and independently verified positive numeric `TELEGRAM_OWNER_USER_ID`. Frontend: `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_CHECK_INTERVAL_SECONDS=900`. Render Free web services may sleep and cold-start.
 5. Limit to three monitors per organization at 900-second intervals and explicitly label as **free pilot**. Confirm authorized destinations for Telegram/ntfy. Check Neon quota usage regularly.
 
 ## Still required before full acceptance
