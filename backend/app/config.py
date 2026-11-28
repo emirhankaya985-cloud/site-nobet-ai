@@ -10,6 +10,7 @@ class Settings(BaseModel):
     cors_origins: list[str] = [x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if x.strip()]
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_webhook_secret: str = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+    telegram_owner_user_id: str = os.getenv("TELEGRAM_OWNER_USER_ID", "")
     ntfy_base_url: str = os.getenv("NTFY_BASE_URL", "https://ntfy.sh")
     environment: str = os.getenv("APP_ENV", "development")
     app_role: str = os.getenv("APP_ROLE", "api")
@@ -48,6 +49,9 @@ def validate_production_settings(settings: Settings) -> None:
         raise RuntimeError("Production NTFY_BASE_URL must be an HTTPS endpoint without credentials")
     if settings.app_role == "api" and settings.telegram_bot_token and len(settings.telegram_webhook_secret) < 16:
         raise RuntimeError("TELEGRAM_WEBHOOK_SECRET required when Telegram is enabled")
+    if settings.app_role == "api" and settings.telegram_bot_token:
+        if not settings.telegram_owner_user_id.isdigit() or int(settings.telegram_owner_user_id) <= 0:
+            raise RuntimeError("TELEGRAM_OWNER_USER_ID must be a positive Telegram user ID when Telegram is enabled")
 
 
 @lru_cache

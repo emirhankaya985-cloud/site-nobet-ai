@@ -11,6 +11,7 @@ def production(**overrides):
         "cors_origins": ["https://dashboard.example.org"],
         "telegram_bot_token": "",
         "telegram_webhook_secret": "",
+        "telegram_owner_user_id": "",
         "ntfy_base_url": "https://ntfy.sh",
     }
     values.update(overrides)
@@ -30,6 +31,12 @@ def test_production_settings_accept_explicit_https():
     {"cors_origins": ["https://public.example.org/path"]},
     {"ntfy_base_url": "http://ntfy.example.org"},
     {"telegram_bot_token": "test-token", "telegram_webhook_secret": ""},
+    {"telegram_bot_token": "test-token", "telegram_webhook_secret": "webhook-secret-long-enough",
+     "telegram_owner_user_id": ""},
+    {"telegram_bot_token": "test-token", "telegram_webhook_secret": "webhook-secret-long-enough",
+     "telegram_owner_user_id": "0"},
+    {"telegram_bot_token": "test-token", "telegram_webhook_secret": "webhook-secret-long-enough",
+     "telegram_owner_user_id": "not-a-number"},
 ])
 def test_production_settings_reject_unsafe_config(overrides):
     with pytest.raises(RuntimeError):
@@ -71,3 +78,11 @@ def test_production_api_still_rejects_default_session_secret():
         validate_production_settings(production(
             app_role="api", session_secret="development-only-change-this-secret",
         ))
+
+
+def test_production_telegram_requires_verified_owner_id():
+    validate_production_settings(production(
+        telegram_bot_token="synthetic-token",
+        telegram_webhook_secret="webhook-secret-long-enough",
+        telegram_owner_user_id="987654321",
+    ))

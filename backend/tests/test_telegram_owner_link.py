@@ -20,7 +20,8 @@ def configured(monkeypatch):
     from app import main
     from types import SimpleNamespace
     monkeypatch.setattr(main, "get_settings", lambda: SimpleNamespace(
-        telegram_bot_token="synthetic-CI-token", telegram_webhook_secret=SECRET))
+        telegram_bot_token="synthetic-CI-token", telegram_webhook_secret=SECRET,
+        telegram_owner_user_id="31337"))
 
 
 def start_url(org):
@@ -91,6 +92,23 @@ def test_pending_handoff_requires_owner_browser_confirmation_and_is_one_time(
         channels = db.scalars(select(NotificationChannel)).all()
         assert len(channels) == 1 and channels[0].confirmed
         assert channels[0].destination == "31337"
+
+
+def test_unverified_telegram_user_cannot_redeem_owner_link_code(
+        client, database, two_users, monkeypatch):
+    configured(monkeypatch)
+    owner = two_users[0]
+    issued = issue(client, owner)
+    # A valid code and Telegram webhook secret do not let a different Telegram
+    # account bind its private chat as the organization owner's channel.
+    assert client.post(WEBHOOK, json=webhook_message(issued["code"], chat_id=44444),
+                       headers=HEADER).status_code == 200
+    status = f"/organizations/{owner['organization_id']}/notifications/telegram/link-status/{issued['id']}"
+    assert client.get(status, headers=h(owner)).json()["state"] == "awaiting_telegram"
+    with database() as db:
+        row = db.get(TelegramLinkCode, issued["id"])
+        assert row.redeemed_at is None
+        assert db.scalar(select(func.count()).select_from(NotificationChannel)) == 0
 
 
 def test_expired_private_only_sender_match_and_unbound_legacy_codes(

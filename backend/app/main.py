@@ -281,7 +281,9 @@ def _link_status(item: TelegramLinkCode) -> dict:
 @app.post("/organizations/{org_id}/notifications/telegram/link-code")
 def telegram_link_code(org_id: str, user: User = Depends(current_user), db: Session = Depends(db_session)):
     _telegram_owner(db, user, org_id)
-    if not get_settings().telegram_bot_token or not get_settings().telegram_webhook_secret:
+    settings = get_settings()
+    if (not settings.telegram_bot_token or not settings.telegram_webhook_secret
+            or not settings.telegram_owner_user_id):
         raise HTTPException(503, "Telegram integration not configured")
     token = secrets.token_urlsafe(32)  # 256 bits; only SHA-256 goes to the database.
     row = TelegramLinkCode(
@@ -343,9 +345,11 @@ def telegram_webhook(payload: dict, x_telegram_bot_api_secret_token: str | None 
     sender = msg.get("from") or {}
     parts = str(msg.get("text", "")).split()
     chat_id, sender_id = chat.get("id"), sender.get("id")
+    expected_owner_id = get_settings().telegram_owner_user_id
     if (chat.get("type") != "private" or len(parts) != 2 or parts[0] != "/start"
             or type(chat_id) is not int or chat_id <= 0
             or type(sender_id) is not int or sender_id != chat_id
+            or not expected_owner_id or str(sender_id) != expected_owner_id
             or sender.get("is_bot") is True):
         return {"ok": True}
     digest = hashlib.sha256(parts[1].encode()).hexdigest()
